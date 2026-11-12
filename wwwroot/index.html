@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="mn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f4">
+  <title>Усны бүртгэл · ШУТИС</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Усны бүртгэл нүүр хуудас">
+        <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3.8S7.5 13.2 7.5 19.2a8.5 8.5 0 0 0 17 0C24.5 13.2 16 3.8 16 3.8Z"/><path d="M12 20.2a4.2 4.2 0 0 0 4.2 4.2"/></svg></span>
+        <span><strong>Усны бүртгэл</strong><small>ШУТИС · Үйлчилгээ</small></span>
+      </a>
+
+      <nav class="main-nav" aria-label="Үндсэн цэс">
+        <button class="nav-link active" data-view="overview"><span class="nav-icon">◫</span> Тойм</button>
+        <button class="nav-link" data-view="filters"><span class="nav-icon">◉</span> Шүүлтүүрүүд <span class="nav-count" id="nav-total">0</span></button>
+        <button class="nav-link" data-view="notifications"><span class="nav-icon">♧</span> Мэдэгдэл <span class="nav-count alert-count" id="nav-alerts">0</span></button>
+        <button class="nav-link" data-view="history"><span class="nav-icon">↻</span> Солилтын түүх</button>
+        <button class="nav-link" data-view="feedback"><span class="nav-icon">✎</span> Санал хүсэлт</button>
+      </nav>
+
+      <div class="top-actions">
+        <label class="scope-picker"><span>КОМПАНИ</span>
+          <select id="company-scope" aria-label="Үйлчилгээний компаниар шүүх">
+            <option value="">Бүх компани</option>
+          </select>
+        </label>
+        <button class="theme-toggle" type="button" aria-pressed="false">
+          <span class="theme-icon" aria-hidden="true">🌙</span>
+          <span class="theme-label">Харанхуй горим</span>
+        </button>
+        <button class="icon-button notification-button" data-view="notifications" aria-label="Мэдэгдэл харах">
+          <span>♧</span><i id="notification-dot"></i>
+        </button>
+        <div class="avatar top-avatar" aria-label="ШУТИС">Ш</div>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <div class="view-breadcrumb"><span>Үйл ажиллагаа</span><span class="breadcrumb-divider">/</span><strong id="breadcrumb-current">Тойм</strong></div>
+      <section class="page-heading">
+        <div>
+          <div class="eyebrow"><span class="live-dot"></span> СУРГУУЛИЙН ҮЙЛЧИЛГЭЭНИЙ УДИРДЛАГА</div>
+          <h1 id="page-title">Шүүлтүүрийн тойм</h1>
+          <p id="page-description">ШУТИС-ийн ус цэвэршүүлэгч төхөөрөмжүүдийн бүртгэл, солих хугацааг нэг дороос хянаарай.</p>
+        </div>
+        <button class="primary-button" id="open-register"><span>＋</span> Төхөөрөмж бүртгэх</button>
+      </section>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+      <div id="success-toast" class="success-toast" role="status" hidden></div>
+
+      <section class="view-panel" id="overview-view">
+        <div class="stat-grid" id="stat-grid">
+          <article class="stat-card">
+            <div class="stat-top"><span class="stat-label">Нийт төхөөрөмж</span><span class="stat-icon mint">◉</span></div>
+            <div class="stat-value" id="stat-total">—</div>
+            <div class="stat-foot"><span class="status-dot green"></span> Бүртгэлд байгаа шүүлтүүр</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top"><span class="stat-label">7 хоногт солих</span><span class="stat-icon amber">◷</span></div>
+            <div class="stat-value" id="stat-due-soon">—</div>
+            <div class="stat-foot"><span class="status-dot amber-dot"></span> Урьдчилсан мэдэгдэл үүссэн</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top"><span class="stat-label">Хугацаа хэтэрсэн</span><span class="stat-icon rose">!</span></div>
+            <div class="stat-value" id="stat-overdue">—</div>
+            <div class="stat-foot"><span class="status-dot red-dot"></span> Яаралтай үйлчилгээ шаардлагатай</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top"><span class="stat-label">Үйлчилгээ товлосон</span><span class="stat-icon blue">↗</span></div>
+            <div class="stat-value" id="stat-scheduled">—</div>
+            <div class="stat-foot"><span class="status-dot blue-dot"></span> Компаниар баталгаажсан</div>
+          </article>
+        </div>
+
+        <section class="content-card">
+          <div class="card-heading">
+            <div><div class="section-kicker">ХУГАЦААНЫ ХЯНАЛТ</div><h2>Ойрын үйлчилгээ</h2><p>Хугацаа дөхсөн болон солих шаардлагатай төхөөрөмжүүд</p></div>
+            <button class="outline-button" data-view="filters">Бүх төхөөрөмж <span>→</span></button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ТӨХӨӨРӨМЖ</th><th>БАЙРШИЛ</th><th>ҮЙЛЧИЛГЭЭНИЙ КОМПАНИ</th><th>СОЛИХ ӨДӨР</th><th>ТӨЛӨВ</th><th></th></tr></thead>
+              <tbody id="upcoming-body"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="overview-empty" hidden><span>✓</span><strong>Ойрын хугацаанд солих төхөөрөмж алга</strong><p>Шүүлтүүрүүд хэвийн ажиллаж байна.</p></div>
+        </section>
+
+        <section class="bottom-grid">
+          <article class="content-card info-card">
+            <div class="section-kicker">АЖИЛЛАХ ЗАРЧИМ</div><h2>Мэдэгдэл хэрхэн үүсэх вэ?</h2>
+            <div class="steps">
+              <div class="step"><span>01</span><div><strong>Бүртгэх</strong><p>Байрлал, суурилуулсан өдөр, солих давтамжийг оруулна.</p></div></div>
+              <div class="step"><span>02</span><div><strong>Сануулах</strong><p>Солих өдрөөс 7 хоногийн өмнө мэдэгдэл үүснэ.</p></div></div>
+              <div class="step"><span>03</span><div><strong>Түүх хадгалах</strong><p>Компани үйлчилгээ товлож, сольсны дараа түүхэнд бүртгэнэ.</p></div></div>
+            </div>
+          </article>
+          <article class="content-card company-card">
+            <div class="company-badge">↗</div><div class="section-kicker">ҮЙЛЧИЛГЭЭНИЙ ТҮНШ</div>
+            <h2>Компаниудтай уялдаа холбоотой</h2>
+            <p>Хариуцсан компани солих хугацааг урьдчилан харж, очих өдрөө товлон бүртгэнэ.</p>
+            <button class="text-button" data-view="notifications">Үйлчилгээний ажлууд <span>→</span></button>
+          </article>
+        </section>
+      </section>
+
+      <section class="view-panel" id="filters-view" hidden>
+        <section class="content-card">
+          <div class="card-heading list-heading">
+            <div><div class="section-kicker">ТӨХӨӨРӨМЖИЙН САН</div><h2>Бүртгэлтэй шүүлтүүрүүд</h2><p>Төхөөрөмжийн байршил болон хариуцах компанийг удирдах</p></div>
+            <label class="search-box"><span>⌕</span><input id="filter-search" type="search" placeholder="Нэр, байршлаар хайх…" aria-label="Шүүлтүүр хайх"></label>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ТӨХӨӨРӨМЖ</th><th>БАЙРШИЛ</th><th>КОМПАНИ</th><th>СУУРИЛУУЛСАН</th><th>СОЛИХ ӨДӨР</th><th>ТӨЛӨВ</th><th>ҮЙЛДЭЛ</th></tr></thead>
+              <tbody id="filters-body"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="filters-empty" hidden><span>⌕</span><strong>Төхөөрөмж олдсонгүй</strong><p>Хайлт эсвэл компанийн сонголтоо өөрчилнө үү.</p></div>
+        </section>
+      </section>
+
+      <section class="view-panel" id="notifications-view" hidden>
+        <section class="notification-intro"><div class="notification-symbol">♧</div><div><div class="section-kicker">7 ХОНОГИЙН ӨМНӨХ САНУУЛГА</div><h2>Солих хугацааны мэдэгдэл</h2><p>Шүүлтүүрийн солих өдөр ойртоход үйлчилгээний компанид урьдчилан сануулна.</p></div></section>
+        <div class="notification-list" id="notification-list"></div>
+        <div class="empty-state content-card" id="notifications-empty" hidden><span>✓</span><strong>Шинэ мэдэгдэл алга</strong><p>Хугацаа дөхсөн үед энэ хэсэгт автоматаар харагдана.</p></div>
+      </section>
+
+      <section class="view-panel" id="history-view" hidden>
+        <section class="content-card">
+          <div class="card-heading"><div><div class="section-kicker">ҮЙЛЧИЛГЭЭНИЙ БҮРТГЭЛ</div><h2>Солилтын түүх</h2><p>Товлосон болон гүйцэтгэсэн үйлчилгээний мэдээлэл</p></div><span class="history-count" id="history-count">0 бүртгэл</span></div>
+          <div class="history-list" id="history-list"></div>
+          <div class="empty-state" id="history-empty" hidden><span>↻</span><strong>Одоогоор үйлчилгээний түүх алга</strong><p>Компанийн товлолт, шүүлтүүрийн солилт энд бүртгэгдэнэ.</p></div>
+        </section>
+      </section>
+
+      <section class="view-panel" id="feedback-view" hidden>
+        <section class="content-card feedback-card">
+          <div class="card-heading">
+            <div><div class="section-kicker">ТАНЫ САНАЛ БИДЭНД ЧУХАЛ</div><h2>Санал хүсэлт илгээх</h2><p>Үйлчилгээ болон системийг сайжруулах санал, хүсэлтээ хуваалцаарай.</p></div>
+          </div>
+          <form id="feedback-form" class="feedback-form" novalidate>
+            <div class="feedback-fields">
+              <div class="feedback-field">
+                <label for="feedback-name">Нэр</label>
+                <input id="feedback-name" name="name" autocomplete="name" placeholder="Таны нэр" required aria-describedby="feedback-name-error">
+                <p class="feedback-error" id="feedback-name-error" hidden></p>
+              </div>
+              <div class="feedback-field">
+                <label for="feedback-email">Имэйл</label>
+                <input id="feedback-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required aria-describedby="feedback-email-error">
+                <p class="feedback-error" id="feedback-email-error" hidden></p>
+              </div>
+              <div class="feedback-field">
+                <label for="feedback-category">Ангилал</label>
+                <select id="feedback-category" name="category">
+                  <option>Үйлчилгээ</option>
+                  <option>Төхөөрөмж</option>
+                  <option>Вэб систем</option>
+                  <option>Бусад</option>
+                </select>
+              </div>
+              <div class="feedback-field feedback-field-message">
+                <label for="feedback-message">Санал хүсэлт</label>
+                <textarea id="feedback-message" name="message" rows="5" minlength="10" maxlength="500" placeholder="Сэтгэгдлээ 10–500 тэмдэгтээр бичнэ үү…" required aria-describedby="feedback-message-error"></textarea>
+                <p class="feedback-error" id="feedback-message-error" hidden></p>
+              </div>
+            </div>
+            <div class="feedback-actions">
+              <button class="primary-button" type="submit">Санал хүсэлт илгээх</button>
+              <p class="feedback-status" id="feedback-status" role="status" aria-live="polite">Илгээсэн санал энэ системийн өгөгдлийн санд хадгалагдана.</p>
+            </div>
+          </form>
+        </section>
+
+        <section class="content-card feedback-history">
+          <div class="card-heading"><div><div class="section-kicker">ӨГӨГДЛИЙН САН</div><h2>Сүүлд ирсэн саналууд</h2><p>Системд бүртгэгдсэн санал хүсэлтүүд</p></div></div>
+          <div class="feedback-list" id="feedback-list"></div>
+          <div class="empty-state" id="feedback-empty" hidden><span>✎</span><strong>Одоогоор санал хүсэлт ирээгүй байна</strong><p>Таны илгээсэн санал энэ хэсэгт харагдана.</p></div>
+        </section>
+      </section>
+
+      <footer class="page-footer"><span>Усны бүртгэл · ШУТИС</span><span>Үйлчилгээ, хугацааны хяналтын систем</span></footer>
+    </main>
+  </div>
+
+  <dialog class="modal" id="register-dialog">
+    <form id="register-form">
+      <div class="modal-heading"><div><div class="section-kicker">ШИНЭ БҮРТГЭЛ</div><h2>Төхөөрөмж нэмэх</h2></div><button class="close-button" type="button" data-close="register-dialog" aria-label="Хаах">×</button></div>
+      <div class="form-grid">
+        <label>Хөрөнгийн дугаар<input name="assetCode" placeholder="Жишээ: SHUTIS-006" required></label>
+        <label>Байгууллага<input name="institution" value="ШУТИС" required></label>
+        <label class="form-wide">Байрлал<input name="location" placeholder="Байр, давхар, өрөө" required></label>
+        <label>Төхөөрөмжийн загвар<input name="model" placeholder="Жишээ: Aqua Pro 300" required></label>
+        <label>Үйлчилгээний компани<input name="company" id="register-company" list="company-options" placeholder="Компанийн нэр" required><datalist id="company-options"></datalist></label>
+        <label>Суурилуулсан өдөр<input name="installDate" type="date" required></label>
+        <label>Солих давтамж (сар)<input name="intervalMonths" type="number" min="1" max="60" value="6" required></label>
+      </div>
+      <div class="modal-actions"><button class="outline-button" type="button" data-close="register-dialog">Болих</button><button class="primary-button" type="submit">Бүртгэх</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="action-dialog">
+    <form id="action-form">
+      <div class="modal-heading"><div><div class="section-kicker" id="action-kicker">ҮЙЛЧИЛГЭЭ</div><h2 id="action-title">Үйлчилгээ бүртгэх</h2></div><button class="close-button" type="button" data-close="action-dialog" aria-label="Хаах">×</button></div>
+      <p class="modal-context" id="action-context"></p>
+      <label id="action-date-label">Өдөр<input name="date" type="date" required></label>
+      <label class="note-label">Тэмдэглэл <span class="optional">(заавал биш)</span><textarea name="note" rows="3" placeholder="Үйлчилгээний тухай нэмэлт мэдээлэл"></textarea></label>
+      <div class="modal-actions"><button class="outline-button" type="button" data-close="action-dialog">Болих</button><button class="primary-button" id="action-submit" type="submit">Хадгалах</button></div>
+    </form>
+  </dialog>
+</body>
+</html>
