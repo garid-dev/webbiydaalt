@@ -18,6 +18,13 @@ const viewInfo = {
 
 const $ = (selector) => document.querySelector(selector);
 const root = document.documentElement;
+const staticMode = location.hostname.endsWith(".github.io") ||
+  new URLSearchParams(location.search).has("staticDemo");
+const storageKeys = {
+  filters: "watercare-pages-filters",
+  history: "watercare-pages-history",
+  feedback: "watercare-pages-feedback"
+};
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 })[character]);
@@ -26,6 +33,56 @@ const today = () => {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return localDate.toISOString().slice(0, 10);
 };
+const shiftDays = (value, days) => {
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+const shiftMonths = (value, months) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const monthIndex = month - 1 + months;
+  const targetYear = year + Math.floor(monthIndex / 12);
+  const targetMonth = (monthIndex % 12 + 12) % 12;
+  const targetDay = Math.min(day, new Date(targetYear, targetMonth + 1, 0).getDate());
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
+};
+function readStaticCollection(key) {
+  return JSON.parse(localStorage.getItem(key) || "[]");
+}
+function writeStaticCollection(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+function initializeStaticDemo() {
+  if (localStorage.getItem(storageKeys.filters) !== null) return;
+  const dueOffsets = [2, 5, 35, 65, 125];
+  const companies = ["Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Aqua Service", "Aqua Service"];
+  const locations = [
+    "Хичээлийн 1-р байр · 1 давхар",
+    "Хичээлийн 2-р байр · номын сан",
+    "МХТС · багш нарын өрөө",
+    "ГУУС · лаборатори",
+    "Төв байр · захиргаа"
+  ];
+  const filters = dueOffsets.map((offset, index) => {
+    const dueDate = shiftDays(today(), offset);
+    return {
+      id: `static-demo-${index + 1}`,
+      assetCode: `SHUTIS-${String(index + 1).padStart(3, "0")}`,
+      institution: "ШУТИС",
+      location: locations[index],
+      model: index < 2 || index === 4 ? "Aqua Pro 300" : "PureFlow X2",
+      installDate: shiftMonths(dueDate, -6),
+      intervalMonths: 6,
+      company: companies[index],
+      scheduledDate: null,
+      scheduleNote: null
+    };
+  });
+  writeStaticCollection(storageKeys.filters, filters);
+  writeStaticCollection(storageKeys.history, []);
+  writeStaticCollection(storageKeys.feedback, []);
+}
+
 const formatDate = (value) => {
   if (!value) return "—";
   const [year, month, day] = value.split("-").map(Number);
@@ -63,6 +120,7 @@ const visibleFilters = () => {
 };
 
 async function api(path, options = {}) {
+  if (staticMode) return staticApi(path, options);
   const response = await fetch(path, {
     ...options,
     headers: { "Content-Type": "application/json", ...options.headers }
@@ -70,6 +128,143 @@ async function api(path, options = {}) {
   const result = response.status === 204 ? null : await response.json();
   if (!response.ok) throw new Error(result?.message || "Хүсэлтийг боловсруулахад алдаа гарлаа.");
   return result;
+}
+
+function staticApi(path, options) {
+  const url = new URL(path, location.href);
+  const method = (options.method || "GET").toUpperCase();
+  const body = options.body ? JSON.parse(options.body) : {};
+  const filters = readStaticCollection(storageKeys.filters);
+
+  if (url.pathname === "/api/companies" && method === "GET") {
+    return [...new Set(filters.map((filter) => filter.company))]
+      .sort()
+      .map((name) => ({ name }));
+  }
+  if (url.pathname === "/api/filters" && method === "GET") {
+    const company = url.searchParams.get("company");
+    const search = (url.searchParams.get("search") || "").toLocaleLowerCase();
+    return filters
+      .filter((filter) => (!company || filter.company === company) &&
+        (!search || [filter.assetCode, filter.institution, filter.location, filter.model, filter.company]
+          .some((value) => value.toLocaleLowerCase().includes(search))))
+      .map(staticFilterView);
+  }
+  if (url.pathname === "/api/dashboard" && method === "GET") {
+    const company = url.searchParams.get("company");
+    const rows = filters.filter((filter) => !company || filter.company === company).map(staticFilterView);
+    return {
+      total: rows.length,
+      overdue: rows.filter((filter) => filter.status === "overdue").length,
+      dueSoon: rows.filter((filter) => filter.status === "due-soon").length,
+      scheduled: rows.filter((filter) => filter.scheduledDate).length
+    };
+  }
+  if (url.pathname === "/api/history" && method === "GET") {
+    const company = url.searchParams.get("company");
+    return readStaticCollection(storageKeys.history)
+      .filter((entry) => !company || entry.company === company);
+  }
+  if (url.pathname === "/api/feedback" && method === "GET") {
+    return readStaticCollection(storageKeys.feedback);
+  }
+  if (url.pathname === "/api/feedback" && method === "POST") {
+    const feedback = readStaticCollection(storageKeys.feedback);
+    const entry = {
+      id: Date.now(),
+      name: body.name.trim(),
+      category: body.category,
+      message: body.message.trim(),
+      createdAt: new Date().toISOString().slice(0, 16).replace("T", " ")
+    };
+    feedback.unshift(entry);
+    writeStaticCollection(storageKeys.feedback, feedback);
+    return entry;
+  }
+  if (url.pathname === "/api/filters" && method === "POST") {
+    if (filters.some((filter) => filter.assetCode.toLowerCase() === body.assetCode.trim().toLowerCase())) {
+      throw new Error("Энэ хөрөнгийн дугаар бүртгэлтэй байна.");
+    }
+    const filter = {
+      id: `static-${Date.now()}`,
+      assetCode: body.assetCode.trim(),
+      institution: body.institution.trim(),
+      location: body.location.trim(),
+      model: body.model.trim(),
+      installDate: body.installDate,
+      intervalMonths: Number(body.intervalMonths),
+      company: body.company.trim(),
+      scheduledDate: null,
+      scheduleNote: null
+    };
+    filters.push(filter);
+    writeStaticCollection(storageKeys.filters, filters);
+    return staticFilterView(filter);
+  }
+
+  const actionMatch = url.pathname.match(/^\/api\/filters\/([^/]+)\/(schedule|replace)$/);
+  if (actionMatch && method === "POST") {
+    const [, id, action] = actionMatch;
+    const filter = filters.find((entry) => entry.id === id);
+    if (!filter) throw new Error("Шүүлтүүр олдсонгүй.");
+    const oldView = staticFilterView(filter);
+    const history = readStaticCollection(storageKeys.history);
+
+    if (action === "schedule") {
+      filter.scheduledDate = body.scheduledDate;
+      filter.scheduleNote = body.note?.trim() || null;
+      history.unshift({
+        id: Date.now(),
+        assetCode: filter.assetCode,
+        institution: filter.institution,
+        location: filter.location,
+        company: filter.company,
+        action: "Товлосон",
+        actionDate: today(),
+        previousDueDate: oldView.dueDate,
+        nextDueDate: oldView.dueDate,
+        note: filter.scheduleNote
+      });
+      writeStaticCollection(storageKeys.filters, filters);
+      writeStaticCollection(storageKeys.history, history);
+      return { message: "Солих үйлчилгээг товлолоо." };
+    }
+
+    const nextDueDate = shiftMonths(body.replacedAt, Number(filter.intervalMonths));
+    filter.installDate = body.replacedAt;
+    filter.scheduledDate = null;
+    filter.scheduleNote = null;
+    history.unshift({
+      id: Date.now(),
+      assetCode: filter.assetCode,
+      institution: filter.institution,
+      location: filter.location,
+      company: filter.company,
+      action: "Сольсон",
+      actionDate: body.replacedAt,
+      previousDueDate: oldView.dueDate,
+      nextDueDate,
+      note: body.note?.trim() || null
+    });
+    writeStaticCollection(storageKeys.filters, filters);
+    writeStaticCollection(storageKeys.history, history);
+    return { message: "Солилт амжилттай бүртгэгдлээ." };
+  }
+
+  throw new Error("Энэ үйлдлийг static demo дэмжихгүй байна.");
+}
+
+function staticFilterView(filter) {
+  const dueDate = shiftMonths(filter.installDate, Number(filter.intervalMonths));
+  const daysRemaining = Math.round(
+    (new Date(`${dueDate}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000
+  );
+  return {
+    ...filter,
+    dueDate,
+    daysRemaining,
+    status: daysRemaining < 0 ? "overdue" : daysRemaining <= 7 ? "due-soon" : "ok"
+  };
 }
 
 function showError(message) {
@@ -393,6 +588,7 @@ $("#feedback-form").addEventListener("submit", async (event) => {
 });
 
 async function start() {
+  if (staticMode) initializeStaticDemo();
   await loadCompanies();
   await loadData();
 }
