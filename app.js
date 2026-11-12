@@ -5,15 +5,15 @@ const state = {
   currentView: "overview",
   action: null,
   activeFilter: null,
-  companies: [],
-  role: ["user", "company", "admin"].includes(localStorage.getItem("watercare-role"))
+  paymentFilter: null,
+  role: ["user", "admin"].includes(localStorage.getItem("watercare-role"))
     ? localStorage.getItem("watercare-role") : "user"
 };
 
 const viewInfo = {
   overview: ["Тойм", "Шүүлтүүрийн тойм", "ШУТИС-ийн ус цэвэршүүлэгч төхөөрөмжүүдийн бүртгэл, солих хугацааг нэг дороос хянаарай."],
-  filters: ["Шүүлтүүрүүд", "Төхөөрөмжийн бүртгэл", "Байгууллагын бүх төхөөрөмжийн байршил, солих хугацаа, үйлчилгээний компанийг удирдана."],
-  notifications: ["Мэдэгдэл", "Үйлчилгээний мэдэгдэл", "Хугацаа нь дөхсөн төхөөрөмжүүдийг хариуцсан компанитай хамтран товлож, хянана."],
+  filters: ["Шүүлтүүрүүд", "Төхөөрөмжийн бүртгэл", "Байгууллагын бүх төхөөрөмжийн байршил, солих хугацааг удирдана."],
+  notifications: ["Мэдэгдэл", "Үйлчилгээний мэдэгдэл", "Хугацаа нь дөхсөн төхөөрөмжүүдийн хүсэлтийг хянаж, шийдвэрлэнэ."],
   history: ["Солилтын түүх", "Үйлчилгээний түүх", "Товлосон болон гүйцэтгэсэн үйлчилгээний бүртгэл."],
   feedback: ["Санал хүсэлт", "Санал хүсэлт", "Үйлчилгээ болон системийг сайжруулах санал, хүсэлтээ илгээнэ үү."]
 };
@@ -58,14 +58,15 @@ function initializeStaticDemo() {
   const savedFilters = readStaticCollection(storageKeys.filters);
   const existingAssetCodes = new Set(savedFilters.map((filter) =>
     String(filter.assetCode ?? "").toLocaleLowerCase()));
-  const dueOffsets = [2, 5, 35, 65, 125];
-  const companies = ["Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Aqua Service", "Aqua Service"];
+  const dueOffsets = [2, 5, 35, 65, 125, 1];
+  const companies = ["Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Aqua Service", "Aqua Service", "Билэг ус цэвэршүүлэгч"];
   const locations = [
     "Хичээлийн 1-р байр · 1 давхар",
     "Хичээлийн 2-р байр · номын сан",
     "МХТС · багш нарын өрөө",
     "ГУУС · лаборатори",
-    "Төв байр · захиргаа"
+    "Төв байр · захиргаа",
+    "Хичээлийн 3-р байр · 2 давхар"
   ];
   const filters = dueOffsets.map((offset, index) => {
     const dueDate = shiftDays(today(), offset);
@@ -81,8 +82,11 @@ function initializeStaticDemo() {
       scheduledDate: null,
       scheduleNote: null,
       userConfirmed: false,
+      userRejected: false,
       paymentPaid: false,
+      paymentDecided: false,
       adminApproved: false,
+      adminRejected: false,
       requestOpen: false,
       lastReplacedAt: null
     };
@@ -129,38 +133,40 @@ const statusLabel = (filter) => filter.scheduledDate
   : filter.status === "overdue" ? "Хугацаа хэтэрсэн"
     : filter.status === "due-soon" ? "Солих дөхсөн"
       : filter.status === "replaced" ? "Солигдсон" : "Хэвийн";
-const canProcess = (filter) => filter.requestOpen ||
+const canProcess = (filter) => filter.requestOpen || filter.userRejected || filter.adminRejected ||
   filter.status === "overdue" || filter.status === "due-soon";
 function approvalProgress(filter) {
   const steps = [
-    ["userConfirmed", "Хэрэглэгч"],
-    ["paymentPaid", "Төлбөр"],
-    ["adminApproved", "Админ"]
+    [filter.userConfirmed ? "Зөвшөөрсөн" : filter.userRejected ? "Татгалзсан" : "Хүлээгдэж буй", "Хэрэглэгч", filter.userConfirmed, filter.userRejected],
+    [filter.paymentPaid ? "Төлсөн" : filter.paymentDecided ? "Төлөөгүй" : "Хүлээгдэж буй", "Төлбөр", filter.paymentPaid, filter.paymentDecided && !filter.paymentPaid],
+    [filter.adminApproved ? "Зөвшөөрсөн" : filter.adminRejected ? "Татгалзсан" : "Хүлээгдэж буй", "Админ", filter.adminApproved, filter.adminRejected]
   ];
-  return `<div class="approval-checklist" aria-label="Солих зөвшөөрлийн явц">${steps.map(([key, label]) => `
-    <span class="approval-step ${filter[key] ? "complete" : ""}">${filter[key] ? "✓" : "○"} ${label}</span>
+  return `<div class="approval-checklist" aria-label="Солих зөвшөөрлийн явц">${steps.map(([status, label, complete, rejected]) => `
+    <span class="approval-step ${complete ? "complete" : ""} ${rejected ? "rejected" : ""}">${escapeHtml(label)}: ${escapeHtml(status)}</span>
   `).join("")}</div>`;
 }
 function roleActions(filter) {
   if (!canProcess(filter) || filter.status === "replaced") return "";
   const actions = [];
-  if (state.role === "user" && !filter.userConfirmed) {
+  if (state.role === "user" && (filter.userRejected || filter.adminRejected)) {
+    actions.push(`<button class="row-action" data-action="approval" data-step="user-confirm" data-id="${escapeHtml(filter.id)}">Шинэ хүсэлт гаргах</button>`);
+  } else if (state.role === "user" && !filter.userConfirmed) {
     actions.push(`<button class="row-action" data-action="approval" data-step="user-confirm" data-id="${escapeHtml(filter.id)}">Зөвшөөрөх</button>`);
-  } else if (state.role === "company" && !filter.paymentPaid) {
-    actions.push(`<button class="row-action" data-action="approval" data-step="payment" data-id="${escapeHtml(filter.id)}">Төлбөр төлөгдсөн</button>`);
-  } else if (state.role === "admin" && !filter.adminApproved) {
-    actions.push(`<button class="row-action" data-action="approval" data-step="admin-approve" data-id="${escapeHtml(filter.id)}">Админ зөвшөөрөх</button>`);
+    actions.push(`<button class="row-action" data-action="approval" data-step="user-reject" data-id="${escapeHtml(filter.id)}">Татгалзах</button>`);
+  } else if (state.role === "user" && filter.userConfirmed && !filter.paymentPaid) {
+    actions.push(`<button class="row-action" data-action="payment-qr" data-id="${escapeHtml(filter.id)}">Төлбөрийн QR харах</button>`);
   }
-  if (state.role === "company") {
-    actions.push(`<button class="row-action" data-action="schedule" data-id="${escapeHtml(filter.id)}">Товлох</button>`);
+  if (state.role === "admin" && filter.requestOpen && filter.userConfirmed &&
+      filter.paymentPaid && !filter.adminApproved && !filter.adminRejected) {
+    actions.push(`<button class="row-action" data-action="approval" data-step="admin-approve" data-id="${escapeHtml(filter.id)}">Зөвшөөрөх</button>`);
+    actions.push(`<button class="row-action" data-action="approval" data-step="admin-reject" data-id="${escapeHtml(filter.id)}">Татгалзах</button>`);
   }
   return actions.length ? `<div class="row-actions">${actions.join("")}</div>` : "";
 }
 const visibleFilters = () => {
-  const company = $("#company-scope").value;
   const search = $("#filter-search").value.trim().toLocaleLowerCase();
-  return state.filters.filter((filter) => (!company || filter.company === company) &&
-    (!search || [filter.assetCode, filter.institution, filter.location, filter.model, filter.company]
+  return state.filters.filter((filter) =>
+    (!search || [filter.assetCode, filter.institution, filter.location, filter.model]
       .some((value) => value.toLocaleLowerCase().includes(search))));
 };
 
@@ -181,23 +187,16 @@ function staticApi(path, options) {
   const body = options.body ? JSON.parse(options.body) : {};
   const filters = readStaticCollection(storageKeys.filters);
 
-  if (url.pathname === "/api/companies" && method === "GET") {
-    return [...new Set(filters.map((filter) => filter.company))]
-      .sort()
-      .map((name) => ({ name }));
-  }
   if (url.pathname === "/api/filters" && method === "GET") {
-    const company = url.searchParams.get("company");
     const search = (url.searchParams.get("search") || "").toLocaleLowerCase();
     return filters
-      .filter((filter) => (!company || filter.company === company) &&
-        (!search || [filter.assetCode, filter.institution, filter.location, filter.model, filter.company]
+      .filter((filter) =>
+        (!search || [filter.assetCode, filter.institution, filter.location, filter.model]
           .some((value) => value.toLocaleLowerCase().includes(search))))
       .map(staticFilterView);
   }
   if (url.pathname === "/api/dashboard" && method === "GET") {
-    const company = url.searchParams.get("company");
-    const rows = filters.filter((filter) => !company || filter.company === company).map(staticFilterView);
+    const rows = filters.map(staticFilterView);
     return {
       total: rows.length,
       overdue: rows.filter((filter) => filter.status === "overdue").length,
@@ -206,9 +205,7 @@ function staticApi(path, options) {
     };
   }
   if (url.pathname === "/api/history" && method === "GET") {
-    const company = url.searchParams.get("company");
-    return readStaticCollection(storageKeys.history)
-      .filter((entry) => !company || entry.company === company);
+    return readStaticCollection(storageKeys.history);
   }
   if (url.pathname === "/api/feedback" && method === "GET") {
     return readStaticCollection(storageKeys.feedback);
@@ -238,12 +235,15 @@ function staticApi(path, options) {
       model: body.model.trim(),
       installDate: body.installDate,
       intervalMonths: Number(body.intervalMonths),
-      company: body.company.trim(),
+      company: "",
       scheduledDate: null,
       scheduleNote: null,
       userConfirmed: false,
+      userRejected: false,
       paymentPaid: false,
+      paymentDecided: false,
       adminApproved: false,
+      adminRejected: false,
       requestOpen: false,
       lastReplacedAt: null
     };
@@ -252,7 +252,7 @@ function staticApi(path, options) {
     return staticFilterView(filter);
   }
 
-  const actionMatch = url.pathname.match(/^\/api\/filters\/([^/]+)\/(schedule|user-confirm|payment|admin-approve)$/);
+  const actionMatch = url.pathname.match(/^\/api\/filters\/([^/]+)\/(schedule|user-confirm|user-reject|payment|admin-approve|admin-reject)$/);
   if (actionMatch && method === "POST") {
     const [, id, action] = actionMatch;
     const filter = filters.find((entry) => entry.id === id);
@@ -263,8 +263,11 @@ function staticApi(path, options) {
     if (action === "schedule") {
       if (!filter.requestOpen) {
         filter.userConfirmed = false;
+        filter.userRejected = false;
         filter.paymentPaid = false;
+        filter.paymentDecided = false;
         filter.adminApproved = false;
+        filter.adminRejected = false;
       }
       filter.requestOpen = true;
       filter.scheduledDate = body.scheduledDate;
@@ -286,19 +289,33 @@ function staticApi(path, options) {
       return { message: "Солих үйлчилгээг товлолоо." };
     }
 
-    if (!filter.requestOpen) {
+    if (action !== "payment" && !filter.requestOpen) {
       filter.userConfirmed = false;
+      filter.userRejected = false;
       filter.paymentPaid = false;
+      filter.paymentDecided = false;
       filter.adminApproved = false;
+      filter.adminRejected = false;
       filter.requestOpen = true;
     }
-    const approval = {
-      "user-confirm": ["userConfirmed", "Хэрэглэгч зөвшөөрсөн"],
-      payment: ["paymentPaid", "Төлбөр төлөгдсөн"],
-      "admin-approve": ["adminApproved", "Админ зөвшөөрсөн"]
-    }[action];
-    const [field, label] = approval;
-    filter[field] = true;
+    let label;
+    if (action === "payment") {
+      filter.paymentDecided = true;
+      filter.paymentPaid = Boolean(body.paid);
+      label = filter.paymentPaid ? "Төлбөр төлсөн" : "Төлбөр төлөөгүй";
+    } else {
+      const approval = {
+        "user-confirm": ["userConfirmed", "userRejected", true, "Хэрэглэгч зөвшөөрсөн"],
+        "user-reject": ["userConfirmed", "userRejected", false, "Хэрэглэгч татгалзсан"],
+        "admin-approve": ["adminApproved", "adminRejected", true, "Админ зөвшөөрсөн"],
+        "admin-reject": ["adminApproved", "adminRejected", false, "Админ татгалзсан"]
+      }[action];
+      const [approvedField, rejectedField, approved, actionLabel] = approval;
+      filter[approvedField] = approved;
+      filter[rejectedField] = !approved;
+      filter.requestOpen = approved;
+      label = actionLabel;
+    }
     history.unshift({
       id: Date.now(),
       assetCode: filter.assetCode,
@@ -312,7 +329,8 @@ function staticApi(path, options) {
       note: null
     });
     let message = `${label} бүртгэгдлээ.`;
-    if (filter.userConfirmed && filter.paymentPaid && filter.adminApproved) {
+    if (filter.requestOpen && filter.userConfirmed && !filter.userRejected && filter.paymentPaid &&
+        filter.paymentDecided && filter.adminApproved && !filter.adminRejected) {
       const replacedAt = today();
       const nextDueDate = shiftMonths(replacedAt, Number(filter.intervalMonths));
       filter.installDate = replacedAt;
@@ -330,7 +348,7 @@ function staticApi(path, options) {
         actionDate: replacedAt,
         previousDueDate: oldView.dueDate,
         nextDueDate,
-        note: "Хэрэглэгч, төлбөр, админы 3 зөвшөөрөл бүрэн."
+        note: "Хэрэглэгч зөвшөөрч, төлбөр төлж, админ зөвшөөрсөн."
       });
       message = "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо.";
     }
@@ -344,8 +362,11 @@ function staticApi(path, options) {
 
 function staticFilterView(filter) {
   filter.userConfirmed = Boolean(filter.userConfirmed);
+  filter.userRejected = Boolean(filter.userRejected);
   filter.paymentPaid = Boolean(filter.paymentPaid);
+  filter.paymentDecided = Boolean(filter.paymentDecided);
   filter.adminApproved = Boolean(filter.adminApproved);
+  filter.adminRejected = Boolean(filter.adminRejected);
   filter.requestOpen = Boolean(filter.requestOpen);
   filter.lastReplacedAt = filter.lastReplacedAt || null;
   const dueDate = shiftMonths(filter.installDate, Number(filter.intervalMonths));
@@ -382,13 +403,11 @@ function clearError() {
 
 async function loadData() {
   clearError();
-  const company = $("#company-scope").value;
-  const query = company ? `?company=${encodeURIComponent(company)}` : "";
   try {
     const [dashboard, filters, history, feedback] = await Promise.all([
-      api(`/api/dashboard${query}`),
-      api(`/api/filters${query}`),
-      api(`/api/history${query}`),
+      api("/api/dashboard"),
+      api("/api/filters"),
+      api("/api/history"),
       api("/api/feedback")
     ]);
     state.filters = filters;
@@ -402,19 +421,6 @@ async function loadData() {
     $("#nav-alerts").textContent = dashboard.dueSoon + dashboard.overdue;
     $("#notification-dot").hidden = dashboard.dueSoon + dashboard.overdue === 0;
     renderAll();
-  } catch (error) {
-    showError(error.message);
-  }
-}
-
-async function loadCompanies() {
-  try {
-    state.companies = await api("/api/companies");
-    for (const company of state.companies) {
-      const option = new Option(company.name, company.name);
-      $("#company-scope").add(option);
-      $("#company-options").append(new Option(company.name, company.name));
-    }
   } catch (error) {
     showError(error.message);
   }
@@ -435,7 +441,6 @@ function filterRow(filter, compact = false) {
   return `<tr>
     <td>${deviceCell(filter)}</td>
     <td>${escapeHtml(filter.location)}</td>
-    <td><span class="company-name">${escapeHtml(filter.company)}</span></td>
     ${compact ? "" : `<td class="date-cell">${formatDate(filter.installDate)}</td>`}
     <td class="date-cell">${formatDate(filter.dueDate)}<small>${dueLabel(filter)}</small></td>
     <td>${statusPill(filter)}</td>
@@ -467,7 +472,7 @@ function renderNotifications() {
       <span class="notification-indicator ${filter.status === "overdue" ? "overdue" : ""}"></span>
       <div class="notification-copy">
         <strong>${filter.status === "overdue" ? "Солих хугацаа хэтэрсэн" : "7 хоногийн урьдчилсан мэдэгдэл"} · ${escapeHtml(filter.assetCode)}</strong>
-        <p>${escapeHtml(filter.institution)} · ${escapeHtml(filter.location)} · ${escapeHtml(filter.company)}</p>
+        <p>${escapeHtml(filter.institution)} · ${escapeHtml(filter.location)}</p>
         <div class="notification-time">${filter.status === "overdue" ? dueLabel(filter) : `Солих өдөр: ${formatDate(filter.dueDate)} (${dueLabel(filter)})`}</div>
         ${filter.scheduledDate ? `<div class="notification-time">Үйлчилгээ товлосон: ${formatDate(filter.scheduledDate)}${filter.scheduleNote ? ` · ${escapeHtml(filter.scheduleNote)}` : ""}</div>` : ""}
         ${approvalProgress(filter)}
@@ -484,7 +489,7 @@ function renderHistory() {
       <span class="history-icon ${entry.action === "Товлосон" ? "scheduled" : ""}">${entry.action === "Товлосон" ? "↗" : "↻"}</span>
       <div class="history-copy">
         <strong>${escapeHtml(entry.action)} · ${escapeHtml(entry.assetCode)}</strong>
-        <p>${escapeHtml(entry.institution)} · ${escapeHtml(entry.location)} · ${escapeHtml(entry.company)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</p>
+        <p>${escapeHtml(entry.institution)} · ${escapeHtml(entry.location)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</p>
         ${entry.action === "Сольсон" ? `<p>Дараагийн солих өдөр: ${formatDate(entry.nextDueDate)}</p>` : ""}
       </div>
       <span class="history-date">${formatDate(entry.actionDate)}</span>
@@ -532,13 +537,19 @@ function openAction(action, filter) {
   state.activeFilter = filter;
   $("#action-kicker").textContent = "ҮЙЛЧИЛГЭЭНИЙ ТОВЛОЛТ";
   $("#action-title").textContent = "Үйлчилгээ товлох";
-  $("#action-context").textContent = `${filter.assetCode} · ${filter.location} · ${filter.company}`;
+  $("#action-context").textContent = `${filter.assetCode} · ${filter.location}`;
   $("#action-date-label").firstChild.textContent = "Очих өдөр";
   $("#action-submit").textContent = "Товлох";
   $("#action-form").elements.date.value = filter.scheduledDate || today();
   $("#action-form").elements.date.max = "";
   $("#action-form").elements.note.value = filter.scheduleNote || "";
   $("#action-dialog").showModal();
+}
+
+function openPaymentDialog(filter) {
+  state.paymentFilter = filter;
+  $("#payment-context").textContent = `${filter.assetCode} · ${filter.location}`;
+  $("#payment-dialog").showModal();
 }
 
 document.addEventListener("click", (event) => {
@@ -551,20 +562,38 @@ document.addEventListener("click", (event) => {
     if (filter && actionButton.dataset.action === "approval") {
       api(`/api/filters/${encodeURIComponent(filter.id)}/${actionButton.dataset.step}`, {
         method: "POST"
-      }).then((result) => {
-        showSuccess(result.message || "Баталгаажуулалт бүртгэгдлээ.");
-        return loadData();
+      }).then(async (result) => {
+        await loadData();
+        if (actionButton.dataset.step === "user-confirm") {
+          openPaymentDialog(result.filter);
+        } else {
+          showSuccess(result.message || "Шийдвэр бүртгэгдлээ.");
+        }
       }).catch((error) => showError(error.message));
+    } else if (filter && actionButton.dataset.action === "payment-qr") {
+      openPaymentDialog(filter);
     } else if (filter && actionButton.dataset.action === "schedule") {
       openAction("schedule", filter);
     }
+  }
+
+  const paymentButton = event.target.closest("[data-payment-paid]");
+  if (paymentButton && state.paymentFilter) {
+    const paid = paymentButton.dataset.paymentPaid === "true";
+    api(`/api/filters/${encodeURIComponent(state.paymentFilter.id)}/payment`, {
+      method: "POST",
+      body: JSON.stringify({ paid })
+    }).then(async (result) => {
+      $("#payment-dialog").close();
+      showSuccess(result.message || "Төлбөрийн төлөв бүртгэгдлээ.");
+      await loadData();
+    }).catch((error) => showError(error.message));
   }
 
   const closeButton = event.target.closest("[data-close]");
   if (closeButton) document.getElementById(closeButton.dataset.close).close();
 });
 
-$("#company-scope").addEventListener("change", loadData);
 $("#actor-role").value = state.role;
 $("#actor-role").addEventListener("change", (event) => {
   state.role = event.currentTarget.value;
@@ -593,7 +622,7 @@ $("#register-form").addEventListener("submit", async (event) => {
     model: form.get("model"),
     installDate: form.get("installDate"),
     intervalMonths: Number(form.get("intervalMonths")),
-    company: form.get("company")
+    company: ""
   };
   try {
     await api("/api/filters", { method: "POST", body: JSON.stringify(payload) });
@@ -692,7 +721,6 @@ $("#feedback-form").addEventListener("submit", async (event) => {
 
 async function start() {
   if (staticMode) initializeStaticDemo();
-  await loadCompanies();
   await loadData();
 }
 

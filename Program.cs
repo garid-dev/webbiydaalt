@@ -24,8 +24,7 @@ app.MapPost("/api/filters", (RegisterFilterRequest request, FilterRepository rep
     if (string.IsNullOrWhiteSpace(request.AssetCode) ||
         string.IsNullOrWhiteSpace(request.Institution) ||
         string.IsNullOrWhiteSpace(request.Location) ||
-        string.IsNullOrWhiteSpace(request.Model) ||
-        string.IsNullOrWhiteSpace(request.Company))
+        string.IsNullOrWhiteSpace(request.Model))
     {
         return Results.BadRequest(new { message = "Бүх талбарыг бөглөнө үү." });
     }
@@ -71,38 +70,28 @@ app.MapPost("/api/filters/{id}/schedule", (string id, ScheduleRequest request, F
 
 app.MapPost("/api/filters/{id}/user-confirm", (string id, FilterRepository repository) =>
 {
-    var result = repository.SetApproval(id, ApprovalStep.User);
-    return result is null
-        ? Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." })
-        : Results.Ok(new
-        {
-            filter = result,
-            message = result.Status == "replaced" ? "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо." : "Хэрэглэгчийн зөвшөөрөл бүртгэгдлээ."
-        });
+    return ApprovalResponse(repository.SetDecision(id, ApprovalStep.User, true), "Хэрэглэгч зөвшөөрлөө.");
 });
 
-app.MapPost("/api/filters/{id}/payment", (string id, FilterRepository repository) =>
+app.MapPost("/api/filters/{id}/user-reject", (string id, FilterRepository repository) =>
 {
-    var result = repository.SetApproval(id, ApprovalStep.Payment);
-    return result is null
-        ? Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." })
-        : Results.Ok(new
-        {
-            filter = result,
-            message = result.Status == "replaced" ? "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо." : "Төлбөр төлөгдсөнөөр бүртгэгдлээ."
-        });
+    return ApprovalResponse(repository.SetDecision(id, ApprovalStep.User, false), "Хэрэглэгч хүсэлтээс татгалзлаа.");
+});
+
+app.MapPost("/api/filters/{id}/payment", (string id, PaymentRequest request, FilterRepository repository) =>
+{
+    return ApprovalResponse(repository.SetPayment(id, request.Paid),
+        request.Paid ? "Төлбөр төлөгдсөнөөр бүртгэгдлээ." : "Төлбөр төлөгдөөгүй гэж бүртгэгдлээ.");
 });
 
 app.MapPost("/api/filters/{id}/admin-approve", (string id, FilterRepository repository) =>
 {
-    var result = repository.SetApproval(id, ApprovalStep.Admin);
-    return result is null
-        ? Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." })
-        : Results.Ok(new
-        {
-            filter = result,
-            message = result.Status == "replaced" ? "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо." : "Админы зөвшөөрөл бүртгэгдлээ."
-        });
+    return ApprovalResponse(repository.SetDecision(id, ApprovalStep.Admin, true), "Админ зөвшөөрлөө.");
+});
+
+app.MapPost("/api/filters/{id}/admin-reject", (string id, FilterRepository repository) =>
+{
+    return ApprovalResponse(repository.SetDecision(id, ApprovalStep.Admin, false), "Админ хүсэлтээс татгалзлаа.");
 });
 
 app.MapGet("/api/feedback", (FilterRepository repository) =>
@@ -137,6 +126,20 @@ app.MapPost("/api/feedback", (FeedbackRequest request, FilterRepository reposito
 app.MapGet("/api/history", (string? company, FilterRepository repository) =>
     Results.Ok(repository.GetHistory(company)));
 
+IResult ApprovalResponse(FilterView? filter, string successMessage)
+{
+    if (filter is null)
+    {
+        return Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." });
+    }
+
+    return Results.Ok(new
+    {
+        filter,
+        message = filter.Status == "replaced" ? "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо." : successMessage
+    });
+}
+
 app.Run();
 
 public sealed record RegisterFilterRequest(
@@ -149,8 +152,9 @@ public sealed record RegisterFilterRequest(
     string Company);
 
 public sealed record ScheduleRequest(string ScheduledDate, string? Note);
+public sealed record PaymentRequest(bool Paid);
 public sealed record FeedbackRequest(string? Name, string? Email, string? Category, string? Message);
-public enum ApprovalStep { User, Payment, Admin }
+public enum ApprovalStep { User, Admin }
 public sealed record CompanyOption(string Name);
 public sealed record DashboardSummary(int Total, int Overdue, int DueSoon, int Scheduled);
 public sealed record FilterView(
@@ -171,7 +175,10 @@ public sealed record FilterView(
     bool PaymentPaid,
     bool AdminApproved,
     bool RequestOpen,
-    string? LastReplacedAt);
+    string? LastReplacedAt,
+    bool UserRejected,
+    bool PaymentDecided,
+    bool AdminRejected);
 public sealed record HistoryView(
     long Id,
     string AssetCode,
@@ -222,7 +229,8 @@ public sealed class FilterRepository
         command.CommandText = """
             SELECT id, asset_code, institution, location, model, install_date, interval_months,
                    company, scheduled_date, schedule_note, user_confirmed, payment_paid,
-                   admin_approved, request_open, last_replaced_at
+                   admin_approved, request_open, last_replaced_at, user_rejected,
+                   payment_decided, admin_rejected
             FROM filters
             WHERE ($company IS NULL OR company = $company)
               AND ($search IS NULL OR asset_code LIKE $pattern OR institution LIKE $pattern
@@ -278,7 +286,8 @@ public sealed class FilterRepository
         select.CommandText = """
             SELECT id, asset_code, institution, location, model, install_date, interval_months,
                    company, scheduled_date, schedule_note, user_confirmed, payment_paid,
-                   admin_approved, request_open, last_replaced_at
+                   admin_approved, request_open, last_replaced_at, user_rejected,
+                   payment_decided, admin_rejected
             FROM filters WHERE id = $id;
             """;
         select.Parameters.AddWithValue("$id", id);
@@ -304,8 +313,11 @@ public sealed class FilterRepository
             SET scheduled_date = $scheduledDate,
                 schedule_note = $note,
                 user_confirmed = CASE WHEN request_open = 0 THEN 0 ELSE user_confirmed END,
+                user_rejected = CASE WHEN request_open = 0 THEN 0 ELSE user_rejected END,
                 payment_paid = CASE WHEN request_open = 0 THEN 0 ELSE payment_paid END,
+                payment_decided = CASE WHEN request_open = 0 THEN 0 ELSE payment_decided END,
                 admin_approved = CASE WHEN request_open = 0 THEN 0 ELSE admin_approved END,
+                admin_rejected = CASE WHEN request_open = 0 THEN 0 ELSE admin_rejected END,
                 request_open = 1
             WHERE id = $id;
             """;
@@ -320,7 +332,7 @@ public sealed class FilterRepository
         return true;
     }
 
-    public FilterView? SetApproval(string id, ApprovalStep step)
+    public FilterView? SetDecision(string id, ApprovalStep step, bool approved)
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
@@ -336,7 +348,8 @@ public sealed class FilterRepository
             start.Transaction = transaction;
             start.CommandText = """
                 UPDATE filters
-                SET user_confirmed = 0, payment_paid = 0, admin_approved = 0, request_open = 1
+                SET user_confirmed = 0, user_rejected = 0, payment_paid = 0, payment_decided = 0,
+                    admin_approved = 0, admin_rejected = 0, request_open = 1
                 WHERE id = $id;
                 """;
             start.Parameters.AddWithValue("$id", id);
@@ -347,9 +360,8 @@ public sealed class FilterRepository
 
         var alreadyApproved = step switch
         {
-            ApprovalStep.User => filter.UserConfirmed,
-            ApprovalStep.Payment => filter.PaymentPaid,
-            ApprovalStep.Admin => filter.AdminApproved,
+            ApprovalStep.User => approved ? filter.UserConfirmed : filter.UserRejected,
+            ApprovalStep.Admin => approved ? filter.AdminApproved : filter.AdminRejected,
             _ => throw new ArgumentOutOfRangeException(nameof(step))
         };
         if (!alreadyApproved)
@@ -358,9 +370,14 @@ public sealed class FilterRepository
             command.Transaction = transaction;
             command.CommandText = step switch
             {
-                ApprovalStep.User => "UPDATE filters SET user_confirmed = 1 WHERE id = $id;",
-                ApprovalStep.Payment => "UPDATE filters SET payment_paid = 1 WHERE id = $id;",
-                ApprovalStep.Admin => "UPDATE filters SET admin_approved = 1 WHERE id = $id;",
+                ApprovalStep.User when approved =>
+                    "UPDATE filters SET user_confirmed = 1, user_rejected = 0, request_open = 1 WHERE id = $id;",
+                ApprovalStep.User =>
+                    "UPDATE filters SET user_confirmed = 0, user_rejected = 1, request_open = 0 WHERE id = $id;",
+                ApprovalStep.Admin when approved =>
+                    "UPDATE filters SET admin_approved = 1, admin_rejected = 0, request_open = 1 WHERE id = $id;",
+                ApprovalStep.Admin =>
+                    "UPDATE filters SET admin_approved = 0, admin_rejected = 1, request_open = 0 WHERE id = $id;",
                 _ => throw new ArgumentOutOfRangeException(nameof(step))
             };
             command.Parameters.AddWithValue("$id", id);
@@ -368,9 +385,10 @@ public sealed class FilterRepository
 
             var action = step switch
             {
-                ApprovalStep.User => "Хэрэглэгч зөвшөөрсөн",
-                ApprovalStep.Payment => "Төлбөр төлөгдсөн",
-                ApprovalStep.Admin => "Админ зөвшөөрсөн",
+                ApprovalStep.User when approved => "Хэрэглэгч зөвшөөрсөн",
+                ApprovalStep.User => "Хэрэглэгч татгалзсан",
+                ApprovalStep.Admin when approved => "Админ зөвшөөрсөн",
+                ApprovalStep.Admin => "Админ татгалзсан",
                 _ => throw new ArgumentOutOfRangeException(nameof(step))
             };
             AddHistory(connection, transaction, filter, action, DateOnly.FromDateTime(DateTime.Today),
@@ -379,11 +397,58 @@ public sealed class FilterRepository
 
         var updated = GetFilterForUpdate(connection, transaction, id)
             ?? throw new InvalidOperationException("Шүүлтүүр шинэчлэлтийн үед олдсонгүй.");
-        if (updated.UserConfirmed && updated.PaymentPaid && updated.AdminApproved)
+        var result = CompleteIfReady(connection, transaction, updated);
+        transaction.Commit();
+        return result;
+    }
+
+    public FilterView? SetPayment(string id, bool paid)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        var filter = GetFilterForUpdate(connection, transaction, id);
+        if (filter is null)
         {
-            var replacedAt = DateOnly.FromDateTime(DateTime.Today);
-            var nextDueDate = replacedAt.AddMonths(updated.IntervalMonths);
-            using var complete = connection.CreateCommand();
+            return null;
+        }
+
+        if (!filter.PaymentDecided || filter.PaymentPaid != paid)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE filters SET payment_paid = $paid, payment_decided = 1 WHERE id = $id;
+                """;
+            command.Parameters.AddWithValue("$paid", paid ? 1 : 0);
+            command.Parameters.AddWithValue("$id", id);
+            command.ExecuteNonQuery();
+            AddHistory(connection, transaction, filter,
+                paid ? "Төлбөр төлсөн" : "Төлбөр төлөөгүй",
+                DateOnly.FromDateTime(DateTime.Today), filter.DueDate, filter.DueDate, null);
+        }
+
+        var updated = GetFilterForUpdate(connection, transaction, id)
+            ?? throw new InvalidOperationException("Шүүлтүүр шинэчлэлтийн үед олдсонгүй.");
+        var result = CompleteIfReady(connection, transaction, updated);
+        transaction.Commit();
+        return result;
+    }
+
+    private FilterView CompleteIfReady(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        FilterView filter)
+    {
+        if (!filter.RequestOpen || !filter.UserConfirmed || filter.UserRejected || !filter.PaymentPaid ||
+            !filter.PaymentDecided || !filter.AdminApproved || filter.AdminRejected)
+        {
+            return filter;
+        }
+
+        var replacedAt = DateOnly.FromDateTime(DateTime.Today);
+        var nextDueDate = replacedAt.AddMonths(filter.IntervalMonths);
+        using (var complete = connection.CreateCommand())
+        {
             complete.Transaction = transaction;
             complete.CommandText = """
                 UPDATE filters
@@ -393,15 +458,13 @@ public sealed class FilterRepository
                 """;
             complete.Parameters.AddWithValue("$installDate", Format(replacedAt));
             complete.Parameters.AddWithValue("$replacedAt", Format(replacedAt));
-            complete.Parameters.AddWithValue("$id", id);
+            complete.Parameters.AddWithValue("$id", filter.Id);
             complete.ExecuteNonQuery();
-            AddHistory(connection, transaction, updated, "Сольсон", replacedAt,
-                updated.DueDate, Format(nextDueDate), "Хэрэглэгч, төлбөр, админы 3 зөвшөөрөл бүрэн.");
         }
-
-        var result = GetFilterForUpdate(connection, transaction, id);
-        transaction.Commit();
-        return result;
+        AddHistory(connection, transaction, filter, "Сольсон", replacedAt,
+            filter.DueDate, Format(nextDueDate), "Хэрэглэгч зөвшөөрч, төлбөр төлж, админ зөвшөөрсөн.");
+        return GetFilterForUpdate(connection, transaction, filter.Id)
+            ?? throw new InvalidOperationException("Шүүлтүүр шинэчлэлтийн үед олдсонгүй.");
     }
 
     public IReadOnlyList<HistoryView> GetHistory(string? company)
@@ -491,7 +554,10 @@ public sealed class FilterRepository
                 payment_paid INTEGER NOT NULL DEFAULT 0,
                 admin_approved INTEGER NOT NULL DEFAULT 0,
                 request_open INTEGER NOT NULL DEFAULT 0,
-                last_replaced_at TEXT
+                last_replaced_at TEXT,
+                user_rejected INTEGER NOT NULL DEFAULT 0,
+                payment_decided INTEGER NOT NULL DEFAULT 0,
+                admin_rejected INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -518,6 +584,9 @@ public sealed class FilterRepository
         EnsureColumn(connection, "admin_approved", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "request_open", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "last_replaced_at", "TEXT");
+        EnsureColumn(connection, "user_rejected", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "payment_decided", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "admin_rejected", "INTEGER NOT NULL DEFAULT 0");
         Seed(connection);
     }
 
@@ -550,7 +619,8 @@ public sealed class FilterRepository
             new SeedFilter("SHUTIS-002", "ШУТИС", "Хичээлийн 2-р байр · номын сан", "Aqua Pro 300", today.AddDays(5).AddMonths(-6), 6, "Билэг ус цэвэршүүлэгч"),
             new SeedFilter("SHUTIS-003", "ШУТИС", "МХТС · багш нарын өрөө", "PureFlow X2", today.AddMonths(-5), 6, "Билэг ус цэвэршүүлэгч"),
             new SeedFilter("SHUTIS-004", "ШУТИС", "ГУУС · лаборатори", "PureFlow X2", today.AddMonths(-4), 6, "Aqua Service"),
-            new SeedFilter("SHUTIS-005", "ШУТИС", "Төв байр · захиргаа", "Aqua Pro 300", today.AddMonths(-2), 6, "Aqua Service")
+            new SeedFilter("SHUTIS-005", "ШУТИС", "Төв байр · захиргаа", "Aqua Pro 300", today.AddMonths(-2), 6, "Aqua Service"),
+            new SeedFilter("SHUTIS-006", "ШУТИС", "Хичээлийн 3-р байр · 2 давхар", "PureFlow X2", today.AddDays(1).AddMonths(-6), 6, "Билэг ус цэвэршүүлэгч")
         };
 
         foreach (var sample in samples)
@@ -591,6 +661,9 @@ public sealed class FilterRepository
         var adminApproved = reader.GetInt32(12) == 1;
         var requestOpen = reader.GetInt32(13) == 1;
         var lastReplacedAt = ReadNullableString(reader, 14);
+        var userRejected = reader.GetInt32(15) == 1;
+        var paymentDecided = reader.GetInt32(16) == 1;
+        var adminRejected = reader.GetInt32(17) == 1;
         var status = daysRemaining < 0
             ? "overdue"
             : daysRemaining <= 7
@@ -600,7 +673,8 @@ public sealed class FilterRepository
             reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
             reader.GetString(4), Format(installDate), reader.GetInt32(6), reader.GetString(7),
             Format(dueDate), daysRemaining, status, ReadNullableString(reader, 8), ReadNullableString(reader, 9),
-            userConfirmed, paymentPaid, adminApproved, requestOpen, lastReplacedAt);
+            userConfirmed, paymentPaid, adminApproved, requestOpen, lastReplacedAt,
+            userRejected, paymentDecided, adminRejected);
     }
 
     private static FilterView? GetFilterForUpdate(SqliteConnection connection, SqliteTransaction transaction, string id)
@@ -610,7 +684,8 @@ public sealed class FilterRepository
         command.CommandText = """
             SELECT id, asset_code, institution, location, model, install_date, interval_months,
                    company, scheduled_date, schedule_note, user_confirmed, payment_paid,
-                   admin_approved, request_open, last_replaced_at
+                   admin_approved, request_open, last_replaced_at, user_rejected,
+                   payment_decided, admin_rejected
             FROM filters WHERE id = $id;
             """;
         command.Parameters.AddWithValue("$id", id);

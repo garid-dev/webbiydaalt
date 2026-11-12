@@ -28,15 +28,9 @@
       </nav>
 
       <div class="top-actions">
-        <label class="scope-picker"><span>КОМПАНИ</span>
-          <select id="company-scope" aria-label="Үйлчилгээний компаниар шүүх">
-            <option value="">Бүх компани</option>
-          </select>
-        </label>
         <label class="role-picker"><span>ҮҮРЭГ</span>
           <select id="actor-role" aria-label="Demo хэрэглэгчийн үүрэг">
             <option value="user">Сургуулийн хэрэглэгч</option>
-            <option value="company">Үйлчилгээний компани</option>
             <option value="admin">Админ</option>
           </select>
         </label>
@@ -85,7 +79,7 @@
           <article class="stat-card">
             <div class="stat-top"><span class="stat-label">Үйлчилгээ товлосон</span><span class="stat-icon blue">↗</span></div>
             <div class="stat-value" id="stat-scheduled">—</div>
-            <div class="stat-foot"><span class="status-dot blue-dot"></span> Компаниар баталгаажсан</div>
+            <div class="stat-foot"><span class="status-dot blue-dot"></span> Бүртгэгдсэн үйлчилгээ</div>
           </article>
         </div>
 
@@ -96,7 +90,7 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ТӨХӨӨРӨМЖ</th><th>БАЙРШИЛ</th><th>ҮЙЛЧИЛГЭЭНИЙ КОМПАНИ</th><th>СОЛИХ ӨДӨР</th><th>ТӨЛӨВ</th><th></th></tr></thead>
+              <thead><tr><th>ТӨХӨӨРӨМЖ</th><th>БАЙРШИЛ</th><th>СОЛИХ ӨДӨР</th><th>ТӨЛӨВ</th><th></th></tr></thead>
               <tbody id="upcoming-body"></tbody>
             </table>
           </div>
@@ -109,14 +103,14 @@
             <div class="steps">
               <div class="step"><span>01</span><div><strong>Бүртгэх</strong><p>Байрлал, суурилуулсан өдөр, солих давтамжийг оруулна.</p></div></div>
               <div class="step"><span>02</span><div><strong>Сануулах</strong><p>Солих өдрөөс 7 хоногийн өмнө мэдэгдэл үүснэ.</p></div></div>
-              <div class="step"><span>03</span><div><strong>Түүх хадгалах</strong><p>Компани үйлчилгээ товлож, сольсны дараа түүхэнд бүртгэнэ.</p></div></div>
+              <div class="step"><span>03</span><div><strong>Солилт баталгаажуулах</strong><p>Төлбөр, админы зөвшөөрөл бүрдсэний дараа түүхэнд бичнэ.</p></div></div>
             </div>
           </article>
-          <article class="content-card company-card">
-            <div class="company-badge">↗</div><div class="section-kicker">ҮЙЛЧИЛГЭЭНИЙ ТҮНШ</div>
-            <h2>Компаниудтай уялдаа холбоотой</h2>
-            <p>Хариуцсан компани солих хугацааг урьдчилан харж, очих өдрөө товлон бүртгэнэ.</p>
-            <button class="text-button" data-view="notifications">Үйлчилгээний ажлууд <span>→</span></button>
+          <article class="content-card workflow-card">
+            <div class="workflow-badge">✓</div><div class="section-kicker">ЗӨВШӨӨРЛИЙН УРСГАЛ</div>
+            <h2>Хэрэглэгчээс админ хүртэл</h2>
+            <p>Хэрэглэгч зөвшөөрч, төлбөр төлөгдөж, админ зөвшөөрсний дараа шүүлтүүр солигдсоноор бүртгэгдэнэ.</p>
+            <button class="text-button" data-view="notifications">Хүсэлтүүд харах <span>→</span></button>
           </article>
         </section>
       </section>
@@ -124,21 +118,21 @@
       <section class="view-panel" id="filters-view" hidden>
         <section class="content-card">
           <div class="card-heading list-heading">
-            <div><div class="section-kicker">ТӨХӨӨРӨМЖИЙН САН</div><h2>Бүртгэлтэй шүүлтүүрүүд</h2><p>Төхөөрөмжийн байршил болон хариуцах компанийг удирдах</p></div>
+            <div><div class="section-kicker">ТӨХӨӨРӨМЖИЙН САН</div><h2>Бүртгэлтэй шүүлтүүрүүд</h2><p>Төхөөрөмжийн байршил болон солих хугацааг хянана</p></div>
             <label class="search-box"><span>⌕</span><input id="filter-search" type="search" placeholder="Нэр, байршлаар хайх…" aria-label="Шүүлтүүр хайх"></label>
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ТӨХӨӨРӨМЖ</th><th>БАЙРШИЛ</th><th>КОМПАНИ</th><th>СУУРИЛУУЛСАН</th><th>СОЛИХ ӨДӨР</th><th>ТӨЛӨВ</th><th>ҮЙЛДЭЛ</th></tr></thead>
+              <thead><tr><th>ТӨХӨӨРӨМЖ</th><th>БАЙРШИЛ</th><th>СУУРИЛУУЛСАН</th><th>СОЛИХ ӨДӨР</th><th>ТӨЛӨВ</th><th>ҮЙЛДЭЛ</th></tr></thead>
               <tbody id="filters-body"></tbody>
             </table>
           </div>
-          <div class="empty-state" id="filters-empty" hidden><span>⌕</span><strong>Төхөөрөмж олдсонгүй</strong><p>Хайлт эсвэл компанийн сонголтоо өөрчилнө үү.</p></div>
+          <div class="empty-state" id="filters-empty" hidden><span>⌕</span><strong>Төхөөрөмж олдсонгүй</strong><p>Хайлтын үгээ өөрчилж дахин оролдоно уу.</p></div>
         </section>
       </section>
 
       <section class="view-panel" id="notifications-view" hidden>
-        <section class="notification-intro"><div class="notification-symbol">♧</div><div><div class="section-kicker">7 ХОНОГИЙН ӨМНӨХ САНУУЛГА</div><h2>Солих хугацааны мэдэгдэл</h2><p>Шүүлтүүрийн солих өдөр ойртоход үйлчилгээний компанид урьдчилан сануулна.</p></div></section>
+        <section class="notification-intro"><div class="notification-symbol">♧</div><div><div class="section-kicker">7 ХОНОГИЙН ӨМНӨХ САНУУЛГА</div><h2>Солих хугацааны мэдэгдэл</h2><p>Шүүлтүүр солих хугацаа дөхөхөд хэрэглэгч хүсэлтээ шийдвэрлэнэ.</p></div></section>
         <div class="notification-list" id="notification-list"></div>
         <div class="empty-state content-card" id="notifications-empty" hidden><span>✓</span><strong>Шинэ мэдэгдэл алга</strong><p>Хугацаа дөхсөн үед энэ хэсэгт автоматаар харагдана.</p></div>
       </section>
@@ -147,7 +141,7 @@
         <section class="content-card">
           <div class="card-heading"><div><div class="section-kicker">ҮЙЛЧИЛГЭЭНИЙ БҮРТГЭЛ</div><h2>Солилтын түүх</h2><p>Зөвшөөрөл, төлбөр, админы баталгаажуулалт болон гүйцэтгэсэн үйлчилгээ</p></div><span class="history-count" id="history-count">0 бүртгэл</span></div>
           <div class="history-list" id="history-list"></div>
-          <div class="empty-state" id="history-empty" hidden><span>↻</span><strong>Одоогоор үйлчилгээний түүх алга</strong><p>Компанийн товлолт, шүүлтүүрийн солилт энд бүртгэгдэнэ.</p></div>
+          <div class="empty-state" id="history-empty" hidden><span>↻</span><strong>Одоогоор үйлчилгээний түүх алга</strong><p>Зөвшөөрөл болон шүүлтүүрийн солилт энд бүртгэгдэнэ.</p></div>
         </section>
       </section>
 
@@ -209,7 +203,6 @@
         <label>Байгууллага<input name="institution" value="ШУТИС" required></label>
         <label class="form-wide">Байрлал<input name="location" placeholder="Байр, давхар, өрөө" required></label>
         <label>Төхөөрөмжийн загвар<input name="model" placeholder="Жишээ: Aqua Pro 300" required></label>
-        <label>Үйлчилгээний компани<input name="company" id="register-company" list="company-options" placeholder="Компанийн нэр" required><datalist id="company-options"></datalist></label>
         <label>Суурилуулсан өдөр<input name="installDate" type="date" required></label>
         <label>Солих давтамж (сар)<input name="intervalMonths" type="number" min="1" max="60" value="6" required></label>
       </div>
@@ -225,6 +218,23 @@
       <label class="note-label">Тэмдэглэл <span class="optional">(заавал биш)</span><textarea name="note" rows="3" placeholder="Үйлчилгээний тухай нэмэлт мэдээлэл"></textarea></label>
       <div class="modal-actions"><button class="outline-button" type="button" data-close="action-dialog">Болих</button><button class="primary-button" id="action-submit" type="submit">Хадгалах</button></div>
     </form>
+  </dialog>
+
+  <dialog class="modal payment-modal" id="payment-dialog">
+    <div class="modal-heading">
+      <div><div class="section-kicker">DEMO ТӨЛБӨР</div><h2>QR код уншуулна уу</h2></div>
+      <button class="close-button" type="button" data-close="payment-dialog" aria-label="Хаах">×</button>
+    </div>
+    <p class="payment-warning">Энэ бол зөвхөн хичээлийн demo QR. Бодит төлбөр авахгүй.</p>
+    <div class="payment-qr">
+      <img src="demo-payment-qr.svg" alt="Бодит төлбөр биш гэдгийг харуулах demo QR код">
+      <span>WATERCARE · DEMO</span>
+    </div>
+    <p class="payment-context" id="payment-context"></p>
+    <div class="payment-choices">
+      <button class="outline-button" type="button" data-payment-paid="false">Төлөөгүй</button>
+      <button class="primary-button" type="button" data-payment-paid="true">Төлсөн</button>
+    </div>
   </dialog>
 </body>
 </html>
