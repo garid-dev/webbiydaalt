@@ -33,6 +33,13 @@
             <option value="">Бүх компани</option>
           </select>
         </label>
+        <label class="role-picker"><span>ҮҮРЭГ</span>
+          <select id="actor-role" aria-label="Demo хэрэглэгчийн үүрэг">
+            <option value="user">Сургуулийн хэрэглэгч</option>
+            <option value="company">Үйлчилгээний компани</option>
+            <option value="admin">Админ</option>
+          </select>
+        </label>
         <button class="theme-toggle" type="button" aria-pressed="false">
           <span class="theme-icon" aria-hidden="true">🌙</span>
           <span class="theme-label">Харанхуй горим</span>
@@ -138,7 +145,7 @@
 
       <section class="view-panel" id="history-view" hidden>
         <section class="content-card">
-          <div class="card-heading"><div><div class="section-kicker">ҮЙЛЧИЛГЭЭНИЙ БҮРТГЭЛ</div><h2>Солилтын түүх</h2><p>Товлосон болон гүйцэтгэсэн үйлчилгээний мэдээлэл</p></div><span class="history-count" id="history-count">0 бүртгэл</span></div>
+          <div class="card-heading"><div><div class="section-kicker">ҮЙЛЧИЛГЭЭНИЙ БҮРТГЭЛ</div><h2>Солилтын түүх</h2><p>Зөвшөөрөл, төлбөр, админы баталгаажуулалт болон гүйцэтгэсэн үйлчилгээ</p></div><span class="history-count" id="history-count">0 бүртгэл</span></div>
           <div class="history-list" id="history-list"></div>
           <div class="empty-state" id="history-empty" hidden><span>↻</span><strong>Одоогоор үйлчилгээний түүх алга</strong><p>Компанийн товлолт, шүүлтүүрийн солилт энд бүртгэгдэнэ.</p></div>
         </section>

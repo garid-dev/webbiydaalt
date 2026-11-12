@@ -69,23 +69,40 @@ app.MapPost("/api/filters/{id}/schedule", (string id, ScheduleRequest request, F
         : Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." });
 });
 
-app.MapPost("/api/filters/{id}/replace", (string id, ReplaceRequest request, FilterRepository repository) =>
+app.MapPost("/api/filters/{id}/user-confirm", (string id, FilterRepository repository) =>
 {
-    if (!DateOnly.TryParseExact(request.ReplacedAt, "yyyy-MM-dd", CultureInfo.InvariantCulture,
-            DateTimeStyles.None, out var replacedAt))
-    {
-        return Results.BadRequest(new { message = "Солисон огноо буруу байна." });
-    }
-
-    if (replacedAt > DateOnly.FromDateTime(DateTime.Today))
-    {
-        return Results.BadRequest(new { message = "Ирээдүйн огноогоор солилт бүртгэх боломжгүй." });
-    }
-
-    var result = repository.Replace(id, replacedAt, request.Note);
+    var result = repository.SetApproval(id, ApprovalStep.User);
     return result is null
         ? Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." })
-        : Results.Ok(result);
+        : Results.Ok(new
+        {
+            filter = result,
+            message = result.Status == "replaced" ? "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо." : "Хэрэглэгчийн зөвшөөрөл бүртгэгдлээ."
+        });
+});
+
+app.MapPost("/api/filters/{id}/payment", (string id, FilterRepository repository) =>
+{
+    var result = repository.SetApproval(id, ApprovalStep.Payment);
+    return result is null
+        ? Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." })
+        : Results.Ok(new
+        {
+            filter = result,
+            message = result.Status == "replaced" ? "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо." : "Төлбөр төлөгдсөнөөр бүртгэгдлээ."
+        });
+});
+
+app.MapPost("/api/filters/{id}/admin-approve", (string id, FilterRepository repository) =>
+{
+    var result = repository.SetApproval(id, ApprovalStep.Admin);
+    return result is null
+        ? Results.NotFound(new { message = "Шүүлтүүр олдсонгүй." })
+        : Results.Ok(new
+        {
+            filter = result,
+            message = result.Status == "replaced" ? "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо." : "Админы зөвшөөрөл бүртгэгдлээ."
+        });
 });
 
 app.MapGet("/api/feedback", (FilterRepository repository) =>
@@ -132,8 +149,8 @@ public sealed record RegisterFilterRequest(
     string Company);
 
 public sealed record ScheduleRequest(string ScheduledDate, string? Note);
-public sealed record ReplaceRequest(string ReplacedAt, string? Note);
 public sealed record FeedbackRequest(string? Name, string? Email, string? Category, string? Message);
+public enum ApprovalStep { User, Payment, Admin }
 public sealed record CompanyOption(string Name);
 public sealed record DashboardSummary(int Total, int Overdue, int DueSoon, int Scheduled);
 public sealed record FilterView(
@@ -149,7 +166,12 @@ public sealed record FilterView(
     int DaysRemaining,
     string Status,
     string? ScheduledDate,
-    string? ScheduleNote);
+    string? ScheduleNote,
+    bool UserConfirmed,
+    bool PaymentPaid,
+    bool AdminApproved,
+    bool RequestOpen,
+    string? LastReplacedAt);
 public sealed record HistoryView(
     long Id,
     string AssetCode,
@@ -199,7 +221,8 @@ public sealed class FilterRepository
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, asset_code, institution, location, model, install_date, interval_months,
-                   company, scheduled_date, schedule_note
+                   company, scheduled_date, schedule_note, user_confirmed, payment_paid,
+                   admin_approved, request_open, last_replaced_at
             FROM filters
             WHERE ($company IS NULL OR company = $company)
               AND ($search IS NULL OR asset_code LIKE $pattern OR institution LIKE $pattern
@@ -254,7 +277,8 @@ public sealed class FilterRepository
         using var select = connection.CreateCommand();
         select.CommandText = """
             SELECT id, asset_code, institution, location, model, install_date, interval_months,
-                   company, scheduled_date, schedule_note
+                   company, scheduled_date, schedule_note, user_confirmed, payment_paid,
+                   admin_approved, request_open, last_replaced_at
             FROM filters WHERE id = $id;
             """;
         select.Parameters.AddWithValue("$id", id);
@@ -276,7 +300,14 @@ public sealed class FilterRepository
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            UPDATE filters SET scheduled_date = $scheduledDate, schedule_note = $note WHERE id = $id;
+            UPDATE filters
+            SET scheduled_date = $scheduledDate,
+                schedule_note = $note,
+                user_confirmed = CASE WHEN request_open = 0 THEN 0 ELSE user_confirmed END,
+                payment_paid = CASE WHEN request_open = 0 THEN 0 ELSE payment_paid END,
+                admin_approved = CASE WHEN request_open = 0 THEN 0 ELSE admin_approved END,
+                request_open = 1
+            WHERE id = $id;
             """;
         command.Parameters.AddWithValue("$scheduledDate", Format(scheduledDate));
         command.Parameters.AddWithValue("$note", string.IsNullOrWhiteSpace(note) ? DBNull.Value : note.Trim());
@@ -289,7 +320,7 @@ public sealed class FilterRepository
         return true;
     }
 
-    public FilterView? Replace(string id, DateOnly replacedAt, string? note)
+    public FilterView? SetApproval(string id, ApprovalStep step)
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
@@ -299,29 +330,78 @@ public sealed class FilterRepository
             return null;
         }
 
-        var nextDueDate = replacedAt.AddMonths(filter.IntervalMonths);
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            UPDATE filters SET install_date = $installDate, scheduled_date = NULL, schedule_note = NULL
-            WHERE id = $id;
-            """;
-        command.Parameters.AddWithValue("$installDate", Format(replacedAt));
-        command.Parameters.AddWithValue("$id", id);
-        command.ExecuteNonQuery();
-
-        AddHistory(connection, transaction, filter, "Сольсон", replacedAt,
-            filter.DueDate, Format(nextDueDate), note);
-        transaction.Commit();
-        return filter with
+        if (!filter.RequestOpen)
         {
-            InstallDate = Format(replacedAt),
-            DueDate = Format(nextDueDate),
-            DaysRemaining = nextDueDate.DayNumber - DateOnly.FromDateTime(DateTime.Today).DayNumber,
-            Status = "ok",
-            ScheduledDate = null,
-            ScheduleNote = null
+            using var start = connection.CreateCommand();
+            start.Transaction = transaction;
+            start.CommandText = """
+                UPDATE filters
+                SET user_confirmed = 0, payment_paid = 0, admin_approved = 0, request_open = 1
+                WHERE id = $id;
+                """;
+            start.Parameters.AddWithValue("$id", id);
+            start.ExecuteNonQuery();
+            filter = GetFilterForUpdate(connection, transaction, id)
+                ?? throw new InvalidOperationException("Шүүлтүүр шинэчлэлтийн үед олдсонгүй.");
+        }
+
+        var alreadyApproved = step switch
+        {
+            ApprovalStep.User => filter.UserConfirmed,
+            ApprovalStep.Payment => filter.PaymentPaid,
+            ApprovalStep.Admin => filter.AdminApproved,
+            _ => throw new ArgumentOutOfRangeException(nameof(step))
         };
+        if (!alreadyApproved)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = step switch
+            {
+                ApprovalStep.User => "UPDATE filters SET user_confirmed = 1 WHERE id = $id;",
+                ApprovalStep.Payment => "UPDATE filters SET payment_paid = 1 WHERE id = $id;",
+                ApprovalStep.Admin => "UPDATE filters SET admin_approved = 1 WHERE id = $id;",
+                _ => throw new ArgumentOutOfRangeException(nameof(step))
+            };
+            command.Parameters.AddWithValue("$id", id);
+            command.ExecuteNonQuery();
+
+            var action = step switch
+            {
+                ApprovalStep.User => "Хэрэглэгч зөвшөөрсөн",
+                ApprovalStep.Payment => "Төлбөр төлөгдсөн",
+                ApprovalStep.Admin => "Админ зөвшөөрсөн",
+                _ => throw new ArgumentOutOfRangeException(nameof(step))
+            };
+            AddHistory(connection, transaction, filter, action, DateOnly.FromDateTime(DateTime.Today),
+                filter.DueDate, filter.DueDate, null);
+        }
+
+        var updated = GetFilterForUpdate(connection, transaction, id)
+            ?? throw new InvalidOperationException("Шүүлтүүр шинэчлэлтийн үед олдсонгүй.");
+        if (updated.UserConfirmed && updated.PaymentPaid && updated.AdminApproved)
+        {
+            var replacedAt = DateOnly.FromDateTime(DateTime.Today);
+            var nextDueDate = replacedAt.AddMonths(updated.IntervalMonths);
+            using var complete = connection.CreateCommand();
+            complete.Transaction = transaction;
+            complete.CommandText = """
+                UPDATE filters
+                SET install_date = $installDate, last_replaced_at = $replacedAt,
+                    scheduled_date = NULL, schedule_note = NULL, request_open = 0
+                WHERE id = $id;
+                """;
+            complete.Parameters.AddWithValue("$installDate", Format(replacedAt));
+            complete.Parameters.AddWithValue("$replacedAt", Format(replacedAt));
+            complete.Parameters.AddWithValue("$id", id);
+            complete.ExecuteNonQuery();
+            AddHistory(connection, transaction, updated, "Сольсон", replacedAt,
+                updated.DueDate, Format(nextDueDate), "Хэрэглэгч, төлбөр, админы 3 зөвшөөрөл бүрэн.");
+        }
+
+        var result = GetFilterForUpdate(connection, transaction, id);
+        transaction.Commit();
+        return result;
     }
 
     public IReadOnlyList<HistoryView> GetHistory(string? company)
@@ -406,7 +486,12 @@ public sealed class FilterRepository
                 interval_months INTEGER NOT NULL CHECK (interval_months BETWEEN 1 AND 60),
                 company TEXT NOT NULL,
                 scheduled_date TEXT,
-                schedule_note TEXT
+                schedule_note TEXT,
+                user_confirmed INTEGER NOT NULL DEFAULT 0,
+                payment_paid INTEGER NOT NULL DEFAULT 0,
+                admin_approved INTEGER NOT NULL DEFAULT 0,
+                request_open INTEGER NOT NULL DEFAULT 0,
+                last_replaced_at TEXT
             );
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -428,7 +513,32 @@ public sealed class FilterRepository
             );
             """;
         command.ExecuteNonQuery();
+        EnsureColumn(connection, "user_confirmed", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "payment_paid", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "admin_approved", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "request_open", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "last_replaced_at", "TEXT");
         Seed(connection);
+    }
+
+    private static void EnsureColumn(SqliteConnection connection, string name, string definition)
+    {
+        using (var inspect = connection.CreateCommand())
+        {
+            inspect.CommandText = "PRAGMA table_info(filters);";
+            using var reader = inspect.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.GetString(1) == name)
+                {
+                    return;
+                }
+            }
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE filters ADD COLUMN {name} {definition};";
+        alter.ExecuteNonQuery();
     }
 
     private static void Seed(SqliteConnection connection)
@@ -475,11 +585,21 @@ public sealed class FilterRepository
         var installDate = DateOnly.ParseExact(reader.GetString(5), "yyyy-MM-dd", CultureInfo.InvariantCulture);
         var dueDate = installDate.AddMonths(reader.GetInt32(6));
         var daysRemaining = dueDate.DayNumber - DateOnly.FromDateTime(DateTime.Today).DayNumber;
-        var status = daysRemaining < 0 ? "overdue" : daysRemaining <= 7 ? "due-soon" : "ok";
+        var userConfirmed = reader.GetInt32(10) == 1;
+        var paymentPaid = reader.GetInt32(11) == 1;
+        var adminApproved = reader.GetInt32(12) == 1;
+        var requestOpen = reader.GetInt32(13) == 1;
+        var lastReplacedAt = ReadNullableString(reader, 14);
+        var status = daysRemaining < 0
+            ? "overdue"
+            : daysRemaining <= 7
+                ? "due-soon"
+                : lastReplacedAt is not null && !requestOpen ? "replaced" : "ok";
         return new FilterView(
             reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
             reader.GetString(4), Format(installDate), reader.GetInt32(6), reader.GetString(7),
-            Format(dueDate), daysRemaining, status, ReadNullableString(reader, 8), ReadNullableString(reader, 9));
+            Format(dueDate), daysRemaining, status, ReadNullableString(reader, 8), ReadNullableString(reader, 9),
+            userConfirmed, paymentPaid, adminApproved, requestOpen, lastReplacedAt);
     }
 
     private static FilterView? GetFilterForUpdate(SqliteConnection connection, SqliteTransaction transaction, string id)
@@ -488,7 +608,9 @@ public sealed class FilterRepository
         command.Transaction = transaction;
         command.CommandText = """
             SELECT id, asset_code, institution, location, model, install_date, interval_months,
-                   company, scheduled_date, schedule_note FROM filters WHERE id = $id;
+                   company, scheduled_date, schedule_note, user_confirmed, payment_paid,
+                   admin_approved, request_open, last_replaced_at
+            FROM filters WHERE id = $id;
             """;
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();

@@ -5,7 +5,9 @@ const state = {
   currentView: "overview",
   action: null,
   activeFilter: null,
-  companies: []
+  companies: [],
+  role: ["user", "company", "admin"].includes(localStorage.getItem("watercare-role"))
+    ? localStorage.getItem("watercare-role") : "user"
 };
 
 const viewInfo = {
@@ -75,7 +77,12 @@ function initializeStaticDemo() {
       intervalMonths: 6,
       company: companies[index],
       scheduledDate: null,
-      scheduleNote: null
+      scheduleNote: null,
+      userConfirmed: false,
+      paymentPaid: false,
+      adminApproved: false,
+      requestOpen: false,
+      lastReplacedAt: null
     };
   });
   writeStaticCollection(storageKeys.filters, filters);
@@ -110,7 +117,35 @@ const dueLabel = (filter) => {
 const statusLabel = (filter) => filter.scheduledDate
   ? "Товлосон"
   : filter.status === "overdue" ? "Хугацаа хэтэрсэн"
-    : filter.status === "due-soon" ? "Солих дөхсөн" : "Хэвийн";
+    : filter.status === "due-soon" ? "Солих дөхсөн"
+      : filter.status === "replaced" ? "Солигдсон" : "Хэвийн";
+const canProcess = (filter) => filter.requestOpen ||
+  filter.status === "overdue" || filter.status === "due-soon";
+function approvalProgress(filter) {
+  const steps = [
+    ["userConfirmed", "Хэрэглэгч"],
+    ["paymentPaid", "Төлбөр"],
+    ["adminApproved", "Админ"]
+  ];
+  return `<div class="approval-checklist" aria-label="Солих зөвшөөрлийн явц">${steps.map(([key, label]) => `
+    <span class="approval-step ${filter[key] ? "complete" : ""}">${filter[key] ? "✓" : "○"} ${label}</span>
+  `).join("")}</div>`;
+}
+function roleActions(filter) {
+  if (!canProcess(filter) || filter.status === "replaced") return "";
+  const actions = [];
+  if (state.role === "user" && !filter.userConfirmed) {
+    actions.push(`<button class="row-action" data-action="approval" data-step="user-confirm" data-id="${escapeHtml(filter.id)}">Зөвшөөрөх</button>`);
+  } else if (state.role === "company" && !filter.paymentPaid) {
+    actions.push(`<button class="row-action" data-action="approval" data-step="payment" data-id="${escapeHtml(filter.id)}">Төлбөр төлөгдсөн</button>`);
+  } else if (state.role === "admin" && !filter.adminApproved) {
+    actions.push(`<button class="row-action" data-action="approval" data-step="admin-approve" data-id="${escapeHtml(filter.id)}">Админ зөвшөөрөх</button>`);
+  }
+  if (state.role === "company") {
+    actions.push(`<button class="row-action" data-action="schedule" data-id="${escapeHtml(filter.id)}">Товлох</button>`);
+  }
+  return actions.length ? `<div class="row-actions">${actions.join("")}</div>` : "";
+}
 const visibleFilters = () => {
   const company = $("#company-scope").value;
   const search = $("#filter-search").value.trim().toLocaleLowerCase();
@@ -195,14 +230,19 @@ function staticApi(path, options) {
       intervalMonths: Number(body.intervalMonths),
       company: body.company.trim(),
       scheduledDate: null,
-      scheduleNote: null
+      scheduleNote: null,
+      userConfirmed: false,
+      paymentPaid: false,
+      adminApproved: false,
+      requestOpen: false,
+      lastReplacedAt: null
     };
     filters.push(filter);
     writeStaticCollection(storageKeys.filters, filters);
     return staticFilterView(filter);
   }
 
-  const actionMatch = url.pathname.match(/^\/api\/filters\/([^/]+)\/(schedule|replace)$/);
+  const actionMatch = url.pathname.match(/^\/api\/filters\/([^/]+)\/(schedule|user-confirm|payment|admin-approve)$/);
   if (actionMatch && method === "POST") {
     const [, id, action] = actionMatch;
     const filter = filters.find((entry) => entry.id === id);
@@ -211,6 +251,12 @@ function staticApi(path, options) {
     const history = readStaticCollection(storageKeys.history);
 
     if (action === "schedule") {
+      if (!filter.requestOpen) {
+        filter.userConfirmed = false;
+        filter.paymentPaid = false;
+        filter.adminApproved = false;
+      }
+      filter.requestOpen = true;
       filter.scheduledDate = body.scheduledDate;
       filter.scheduleNote = body.note?.trim() || null;
       history.unshift({
@@ -230,31 +276,68 @@ function staticApi(path, options) {
       return { message: "Солих үйлчилгээг товлолоо." };
     }
 
-    const nextDueDate = shiftMonths(body.replacedAt, Number(filter.intervalMonths));
-    filter.installDate = body.replacedAt;
-    filter.scheduledDate = null;
-    filter.scheduleNote = null;
+    if (!filter.requestOpen) {
+      filter.userConfirmed = false;
+      filter.paymentPaid = false;
+      filter.adminApproved = false;
+      filter.requestOpen = true;
+    }
+    const approval = {
+      "user-confirm": ["userConfirmed", "Хэрэглэгч зөвшөөрсөн"],
+      payment: ["paymentPaid", "Төлбөр төлөгдсөн"],
+      "admin-approve": ["adminApproved", "Админ зөвшөөрсөн"]
+    }[action];
+    const [field, label] = approval;
+    filter[field] = true;
     history.unshift({
       id: Date.now(),
       assetCode: filter.assetCode,
       institution: filter.institution,
       location: filter.location,
       company: filter.company,
-      action: "Сольсон",
-      actionDate: body.replacedAt,
+      action: label,
+      actionDate: today(),
       previousDueDate: oldView.dueDate,
-      nextDueDate,
-      note: body.note?.trim() || null
+      nextDueDate: oldView.dueDate,
+      note: null
     });
+    let message = `${label} бүртгэгдлээ.`;
+    if (filter.userConfirmed && filter.paymentPaid && filter.adminApproved) {
+      const replacedAt = today();
+      const nextDueDate = shiftMonths(replacedAt, Number(filter.intervalMonths));
+      filter.installDate = replacedAt;
+      filter.lastReplacedAt = replacedAt;
+      filter.scheduledDate = null;
+      filter.scheduleNote = null;
+      filter.requestOpen = false;
+      history.unshift({
+        id: Date.now() + 1,
+        assetCode: filter.assetCode,
+        institution: filter.institution,
+        location: filter.location,
+        company: filter.company,
+        action: "Сольсон",
+        actionDate: replacedAt,
+        previousDueDate: oldView.dueDate,
+        nextDueDate,
+        note: "Хэрэглэгч, төлбөр, админы 3 зөвшөөрөл бүрэн."
+      });
+      message = "Гурван нөхцөл биелсэн тул шүүлтүүр солигдлоо.";
+    }
     writeStaticCollection(storageKeys.filters, filters);
     writeStaticCollection(storageKeys.history, history);
-    return { message: "Солилт амжилттай бүртгэгдлээ." };
+    return { filter: staticFilterView(filter), message };
   }
 
   throw new Error("Энэ үйлдлийг static demo дэмжихгүй байна.");
 }
 
 function staticFilterView(filter) {
+  filter.userConfirmed = Boolean(filter.userConfirmed);
+  filter.paymentPaid = Boolean(filter.paymentPaid);
+  filter.adminApproved = Boolean(filter.adminApproved);
+  filter.requestOpen = Boolean(filter.requestOpen);
+  filter.lastReplacedAt = filter.lastReplacedAt || null;
   const dueDate = shiftMonths(filter.installDate, Number(filter.intervalMonths));
   const daysRemaining = Math.round(
     (new Date(`${dueDate}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000
@@ -263,7 +346,8 @@ function staticFilterView(filter) {
     ...filter,
     dueDate,
     daysRemaining,
-    status: daysRemaining < 0 ? "overdue" : daysRemaining <= 7 ? "due-soon" : "ok"
+    status: daysRemaining < 0 ? "overdue" : daysRemaining <= 7 ? "due-soon" :
+      filter.lastReplacedAt && !filter.requestOpen ? "replaced" : "ok"
   };
 }
 
@@ -336,10 +420,8 @@ function statusPill(filter) {
 }
 
 function filterRow(filter, compact = false) {
-  const actions = `<div class="row-actions">
-    <button class="row-action" data-action="schedule" data-id="${escapeHtml(filter.id)}">Товлох</button>
-    <button class="row-action" data-action="replace" data-id="${escapeHtml(filter.id)}">Солисон</button>
-  </div>`;
+  const actions = `<div class="approval-cell">${canProcess(filter) ? approvalProgress(filter) : ""}
+    ${roleActions(filter)}</div>`;
   return `<tr>
     <td>${deviceCell(filter)}</td>
     <td>${escapeHtml(filter.location)}</td>
@@ -353,7 +435,7 @@ function filterRow(filter, compact = false) {
 
 function renderOverview() {
   const upcoming = state.filters
-    .filter((filter) => filter.status !== "ok")
+    .filter((filter) => canProcess(filter))
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
     .slice(0, 5);
   $("#upcoming-body").innerHTML = upcoming.map((filter) => filterRow(filter, true)).join("");
@@ -368,7 +450,7 @@ function renderFilters() {
 
 function renderNotifications() {
   const notifications = state.filters
-    .filter((filter) => filter.status !== "ok")
+    .filter((filter) => canProcess(filter))
     .sort((a, b) => a.daysRemaining - b.daysRemaining);
   $("#notification-list").innerHTML = notifications.map((filter) => `
     <article class="notification-item">
@@ -378,11 +460,9 @@ function renderNotifications() {
         <p>${escapeHtml(filter.institution)} · ${escapeHtml(filter.location)} · ${escapeHtml(filter.company)}</p>
         <div class="notification-time">${filter.status === "overdue" ? dueLabel(filter) : `Солих өдөр: ${formatDate(filter.dueDate)} (${dueLabel(filter)})`}</div>
         ${filter.scheduledDate ? `<div class="notification-time">Үйлчилгээ товлосон: ${formatDate(filter.scheduledDate)}${filter.scheduleNote ? ` · ${escapeHtml(filter.scheduleNote)}` : ""}</div>` : ""}
+        ${approvalProgress(filter)}
       </div>
-      <div class="row-actions">
-        <button class="row-action" data-action="schedule" data-id="${escapeHtml(filter.id)}">Үйлчилгээ товлох</button>
-        <button class="row-action" data-action="replace" data-id="${escapeHtml(filter.id)}">Солисон</button>
-      </div>
+      ${roleActions(filter)}
     </article>`).join("");
   $("#notifications-empty").hidden = notifications.length > 0;
 }
@@ -440,14 +520,13 @@ function setView(view) {
 function openAction(action, filter) {
   state.action = action;
   state.activeFilter = filter;
-  const isSchedule = action === "schedule";
-  $("#action-kicker").textContent = isSchedule ? "ҮЙЛЧИЛГЭЭНИЙ ТОВЛОЛТ" : "СОЛИЛТЫН БҮРТГЭЛ";
-  $("#action-title").textContent = isSchedule ? "Үйлчилгээ товлох" : "Шүүлтүүр солисон";
+  $("#action-kicker").textContent = "ҮЙЛЧИЛГЭЭНИЙ ТОВЛОЛТ";
+  $("#action-title").textContent = "Үйлчилгээ товлох";
   $("#action-context").textContent = `${filter.assetCode} · ${filter.location} · ${filter.company}`;
-  $("#action-date-label").firstChild.textContent = isSchedule ? "Очих өдөр" : "Солисон өдөр";
-  $("#action-submit").textContent = isSchedule ? "Товлох" : "Солилт бүртгэх";
-  $("#action-form").elements.date.value = isSchedule ? filter.scheduledDate || today() : today();
-  $("#action-form").elements.date.max = isSchedule ? "" : today();
+  $("#action-date-label").firstChild.textContent = "Очих өдөр";
+  $("#action-submit").textContent = "Товлох";
+  $("#action-form").elements.date.value = filter.scheduledDate || today();
+  $("#action-form").elements.date.max = "";
   $("#action-form").elements.note.value = filter.scheduleNote || "";
   $("#action-dialog").showModal();
 }
@@ -459,7 +538,16 @@ document.addEventListener("click", (event) => {
   const actionButton = event.target.closest("[data-action]");
   if (actionButton) {
     const filter = state.filters.find((item) => item.id === actionButton.dataset.id);
-    if (filter) openAction(actionButton.dataset.action, filter);
+    if (filter && actionButton.dataset.action === "approval") {
+      api(`/api/filters/${encodeURIComponent(filter.id)}/${actionButton.dataset.step}`, {
+        method: "POST"
+      }).then((result) => {
+        showSuccess(result.message || "Баталгаажуулалт бүртгэгдлээ.");
+        return loadData();
+      }).catch((error) => showError(error.message));
+    } else if (filter && actionButton.dataset.action === "schedule") {
+      openAction("schedule", filter);
+    }
   }
 
   const closeButton = event.target.closest("[data-close]");
@@ -467,6 +555,12 @@ document.addEventListener("click", (event) => {
 });
 
 $("#company-scope").addEventListener("change", loadData);
+$("#actor-role").value = state.role;
+$("#actor-role").addEventListener("change", (event) => {
+  state.role = event.currentTarget.value;
+  localStorage.setItem("watercare-role", state.role);
+  renderAll();
+});
 $("#filter-search").addEventListener("input", renderFilters);
 $(".theme-toggle").addEventListener("click", () => {
   const dark = root.dataset.theme !== "dark";
@@ -506,10 +600,9 @@ $("#action-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const payload = { note: form.get("note") };
-  const endpoint = state.action === "schedule" ? "schedule" : "replace";
-  payload[state.action === "schedule" ? "scheduledDate" : "replacedAt"] = form.get("date");
+  payload.scheduledDate = form.get("date");
   try {
-    const result = await api(`/api/filters/${encodeURIComponent(state.activeFilter.id)}/${endpoint}`, {
+    const result = await api(`/api/filters/${encodeURIComponent(state.activeFilter.id)}/schedule`, {
       method: "POST",
       body: JSON.stringify(payload)
     });
