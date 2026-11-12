@@ -543,13 +543,6 @@ public sealed class FilterRepository
 
     private static void Seed(SqliteConnection connection)
     {
-        using var count = connection.CreateCommand();
-        count.CommandText = "SELECT COUNT(*) FROM filters;";
-        if (Convert.ToInt32(count.ExecuteScalar(), CultureInfo.InvariantCulture) > 0)
-        {
-            return;
-        }
-
         var today = DateOnly.FromDateTime(DateTime.Today);
         var samples = new[]
         {
@@ -562,6 +555,14 @@ public sealed class FilterRepository
 
         foreach (var sample in samples)
         {
+            using var exists = connection.CreateCommand();
+            exists.CommandText = "SELECT 1 FROM filters WHERE asset_code = $assetCode LIMIT 1;";
+            exists.Parameters.AddWithValue("$assetCode", sample.AssetCode);
+            if (exists.ExecuteScalar() is not null)
+            {
+                continue;
+            }
+
             using var insert = connection.CreateCommand();
             insert.CommandText = """
                 INSERT INTO filters (id, asset_code, institution, location, model, install_date,

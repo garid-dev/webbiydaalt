@@ -69,7 +69,7 @@ button { cursor: pointer; }
 .breadcrumb-divider { color: #c4cbc6; }
 .view-breadcrumb strong { color: #354139; font-weight: 600; }
 .scope-picker, .role-picker { display: flex; align-items: center; gap: 9px; color: #9aa39d; font-size: 9px; font-weight: 700; letter-spacing: 1px; }
-.scope-picker select, .role-picker select { max-width: 210px; padding: 8px 26px 8px 10px; border: 1px solid var(--line); border-radius: 7px; color: #47534b; background: #fff; font-size: 11px; letter-spacing: 0; }
+.scope-picker select, .role-picker select { max-width: 210px; padding: 8px 26px 8px 10px; border: 1px solid var(--line); border-radius: 7px; color: #47534b; background: #fff; font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0; }
 .theme-toggle { min-height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font-size: 10px; font-weight: 600; white-space: nowrap; }
 .theme-toggle:hover { border-color: var(--accent); }
 .icon-button { position: relative; width: 35px; height: 35px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: #59665e; font-size: 17px; }

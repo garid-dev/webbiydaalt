@@ -55,7 +55,9 @@ function writeStaticCollection(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 function initializeStaticDemo() {
-  if (localStorage.getItem(storageKeys.filters) !== null) return;
+  const savedFilters = readStaticCollection(storageKeys.filters);
+  const existingAssetCodes = new Set(savedFilters.map((filter) =>
+    String(filter.assetCode ?? "").toLocaleLowerCase()));
   const dueOffsets = [2, 5, 35, 65, 125];
   const companies = ["Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Билэг ус цэвэршүүлэгч", "Aqua Service", "Aqua Service"];
   const locations = [
@@ -85,9 +87,17 @@ function initializeStaticDemo() {
       lastReplacedAt: null
     };
   });
-  writeStaticCollection(storageKeys.filters, filters);
-  writeStaticCollection(storageKeys.history, []);
-  writeStaticCollection(storageKeys.feedback, []);
+  const missingFilters = filters.filter((filter) =>
+    !existingAssetCodes.has(filter.assetCode.toLocaleLowerCase()));
+  if (missingFilters.length > 0) {
+    writeStaticCollection(storageKeys.filters, [...savedFilters, ...missingFilters]);
+  }
+  if (localStorage.getItem(storageKeys.history) === null) {
+    writeStaticCollection(storageKeys.history, []);
+  }
+  if (localStorage.getItem(storageKeys.feedback) === null) {
+    writeStaticCollection(storageKeys.feedback, []);
+  }
 }
 
 const formatDate = (value) => {
