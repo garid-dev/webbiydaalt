@@ -164,15 +164,40 @@ function roleActions(filter) {
   return actions.length ? `<div class="row-actions">${actions.join("")}</div>` : "";
 }
 const visibleFilters = () => {
-  const search = $("#filter-search").value.trim().toLocaleLowerCase();
+  const choice = $("#filter-choice").value;
   const institution = $("#filter-institution").value;
   const location = $("#filter-location").value;
+  const selectedLocation = choice.startsWith("location:")
+    ? JSON.parse(decodeURIComponent(choice.slice("location:".length))) : null;
   return state.filters.filter((filter) =>
-    (!search || [filter.assetCode, filter.model]
-      .some((value) => value.toLocaleLowerCase().includes(search))) &&
+    (!choice ||
+      (choice.startsWith("device:") && filter.id === choice.slice("device:".length)) ||
+      (selectedLocation && filter.institution === selectedLocation[0] &&
+        filter.location === selectedLocation[1])) &&
     (!institution || filter.institution === institution) &&
     (!location || filter.location.includes(location)));
 };
+
+function populateFilterChoices() {
+  const select = $("#filter-choice");
+  const currentValue = select.value;
+  const devices = state.filters.map((filter) =>
+    `<option value="device:${escapeHtml(filter.id)}">${escapeHtml(filter.assetCode)} · ${escapeHtml(filter.model)}</option>`);
+  const places = [...new Map(state.filters.map((filter) =>
+    [JSON.stringify([filter.institution, filter.location]), filter])).values()]
+    .map((filter) => {
+      const location = encodeURIComponent(JSON.stringify([filter.institution, filter.location]));
+      return `<option value="location:${location}">${escapeHtml(filter.institution)} · ${escapeHtml(filter.location)}</option>`;
+    });
+  select.innerHTML = [
+    '<option value="">Нэр, байршлаар сонгох</option>',
+    `<optgroup label="Төхөөрөмжийн нэр">${devices.join("")}</optgroup>`,
+    `<optgroup label="Байршил">${places.join("")}</optgroup>`
+  ].join("");
+  if ([...select.options].some((option) => option.value === currentValue)) {
+    select.value = currentValue;
+  }
+}
 
 const buildingOptions = {
   "ШУТИС": Array.from({ length: 8 }, (_, index) => `${index + 1}-р байр`),
@@ -200,9 +225,10 @@ function setupBuildingFilters() {
     populateLocationSelect($("#filter-location"), institution || "ШУТИС", true);
     renderFilters();
   });
+  $("#filter-choice").addEventListener("change", renderFilters);
   $("#filter-location").addEventListener("change", renderFilters);
   $("#filter-reset").addEventListener("click", () => {
-    $("#filter-search").value = "";
+    $("#filter-choice").value = "";
     $("#filter-institution").value = "";
     populateLocationSelect($("#filter-location"), "ШУТИС", true);
     renderFilters();
@@ -455,6 +481,7 @@ async function loadData() {
       api("/api/feedback")
     ]);
     state.filters = filters;
+    populateFilterChoices();
     state.history = history;
     state.feedback = feedback;
     $("#stat-total").textContent = dashboard.total;
@@ -644,7 +671,6 @@ $("#actor-role").addEventListener("change", (event) => {
   localStorage.setItem("watercare-role", state.role);
   renderAll();
 });
-$("#filter-search").addEventListener("input", renderFilters);
 $(".theme-toggle").addEventListener("click", () => {
   const dark = root.dataset.theme !== "dark";
   setTheme(dark);

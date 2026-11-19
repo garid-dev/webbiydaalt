@@ -153,6 +153,7 @@ tbody tr:hover { background: #fcfdfc; }
 .filter-controls { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex: 1; flex-wrap: wrap; }
 .filter-controls select,
 .modal select { min-height: 36px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); font-size: 10px; }
+.filter-controls .filter-choice { min-width: 220px; flex: 1 1 240px; }
 .filter-reset { min-height: 36px; padding: 7px 10px; white-space: nowrap; }
 .search-box { width: min(250px, 35%); display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; color: #9aa49d; }
 .search-box input { width: 100%; height: 34px; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 10px; }
