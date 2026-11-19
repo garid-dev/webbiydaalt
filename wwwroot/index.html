@@ -119,7 +119,18 @@
         <section class="content-card">
           <div class="card-heading list-heading">
             <div><div class="section-kicker">ТӨХӨӨРӨМЖИЙН САН</div><h2>Бүртгэлтэй шүүлтүүрүүд</h2><p>Төхөөрөмжийн байршил болон солих хугацааг хянана</p></div>
-            <label class="search-box"><span>⌕</span><input id="filter-search" type="search" placeholder="Нэр, байршлаар хайх…" aria-label="Шүүлтүүр хайх"></label>
+            <div class="filter-controls">
+              <label class="search-box"><span>⌕</span><input id="filter-search" type="search" placeholder="Төхөөрөмжийн нэрээр хайх…" aria-label="Төхөөрөмжийн нэрээр хайх"></label>
+              <select id="filter-institution" aria-label="Байгууллагаар шүүх">
+                <option value="">Бүх байгууллага</option>
+                <option value="ШУТИС">ШУТИС</option>
+                <option value="МУИС">МУИС</option>
+              </select>
+              <select id="filter-location" aria-label="Байршлаар шүүх">
+                <option value="">Бүх байр</option>
+              </select>
+              <button class="outline-button filter-reset" id="filter-reset" type="button">Цэвэрлэх</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table>
@@ -200,8 +211,15 @@
       <div class="modal-heading"><div><div class="section-kicker">ШИНЭ БҮРТГЭЛ</div><h2>Төхөөрөмж нэмэх</h2></div><button class="close-button" type="button" data-close="register-dialog" aria-label="Хаах">×</button></div>
       <div class="form-grid">
         <label>Хөрөнгийн дугаар<input name="assetCode" placeholder="Жишээ: SHUTIS-006" required></label>
-        <label>Байгууллага<input name="institution" value="ШУТИС" required></label>
-        <label class="form-wide">Байрлал<input name="location" placeholder="Байр, давхар, өрөө" required></label>
+        <label>Байгууллага
+          <select id="register-institution" name="institution" required>
+            <option value="ШУТИС">ШУТИС</option>
+            <option value="МУИС">МУИС</option>
+          </select>
+        </label>
+        <label class="form-wide">Байрлал
+          <select id="register-location" name="location" required></select>
+        </label>
         <label>Төхөөрөмжийн загвар<input name="model" placeholder="Жишээ: Aqua Pro 300" required></label>
         <label>Суурилуулсан өдөр<input name="installDate" type="date" required></label>
         <label>Солих давтамж (сар)<input name="intervalMonths" type="number" min="1" max="60" value="6" required></label>

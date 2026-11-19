@@ -165,10 +165,54 @@ function roleActions(filter) {
 }
 const visibleFilters = () => {
   const search = $("#filter-search").value.trim().toLocaleLowerCase();
+  const institution = $("#filter-institution").value;
+  const location = $("#filter-location").value;
   return state.filters.filter((filter) =>
-    (!search || [filter.assetCode, filter.institution, filter.location, filter.model]
-      .some((value) => value.toLocaleLowerCase().includes(search))));
+    (!search || [filter.assetCode, filter.model]
+      .some((value) => value.toLocaleLowerCase().includes(search))) &&
+    (!institution || filter.institution === institution) &&
+    (!location || filter.location.includes(location)));
 };
+
+const buildingOptions = {
+  "ШУТИС": Array.from({ length: 8 }, (_, index) => `${index + 1}-р байр`),
+  "МУИС": Array.from({ length: 6 }, (_, index) => `${index + 1}-р байр`)
+};
+
+function populateLocationSelect(select, institution, includeAll) {
+  const currentValue = select.value;
+  select.innerHTML = [
+    includeAll ? '<option value="">Бүх байр</option>' : "",
+    ...buildingOptions[institution].map((building) =>
+      `<option value="${building}">${institution} · ${building}</option>`)
+  ].join("");
+  if ([...select.options].some((option) => option.value === currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function setupBuildingFilters() {
+  populateLocationSelect($("#filter-location"), "ШУТИС", true);
+  populateLocationSelect($("#register-location"), "ШУТИС", false);
+
+  $("#filter-institution").addEventListener("change", (event) => {
+    const institution = event.currentTarget.value;
+    populateLocationSelect($("#filter-location"), institution || "ШУТИС", true);
+    renderFilters();
+  });
+  $("#filter-location").addEventListener("change", renderFilters);
+  $("#filter-reset").addEventListener("click", () => {
+    $("#filter-search").value = "";
+    $("#filter-institution").value = "";
+    populateLocationSelect($("#filter-location"), "ШУТИС", true);
+    renderFilters();
+  });
+
+  $("#register-institution").addEventListener("change", (event) => {
+    populateLocationSelect($("#register-location"), event.currentTarget.value, false);
+  });
+  populateLocationSelect($("#register-location"), $("#register-institution").value, false);
+}
 
 async function api(path, options = {}) {
   if (staticMode) return staticApi(path, options);
@@ -721,6 +765,7 @@ $("#feedback-form").addEventListener("submit", async (event) => {
 
 async function start() {
   if (staticMode) initializeStaticDemo();
+  setupBuildingFilters();
   await loadData();
 }
 
